@@ -23,7 +23,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 ## Stile
 - Palette "Grafite e blu", token CSS in `:root` e `:root[data-theme="dark"]`. Tema scuro automatico da tramonto ad alba (Roma), `applyTheme()`.
 - Layout Bento su telefono (barra in basso: Oggi · Settimana · Spese · Mente), su computer barra laterale + Calendario a pagina intera (≥1000px).
-- Icona: D corsiva bianca tagliata su blu (giorno), stessa D su grafite (sera).
+- Icona: J corsiva bianca tagliata (stile "J1") su blu di giorno, su grafite di sera.
 - Testi in italiano. Font Geist / Geist Mono.
 
 ## Come lavorare

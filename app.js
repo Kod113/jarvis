@@ -46,7 +46,7 @@ const I = {
   wallet: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M15 15h3"/></svg>',
   mind: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3a4 4 0 0 0-4 4 4 4 0 0 0-2 7 4 4 0 0 0 6 5V3zM15 3a4 4 0 0 1 4 4 4 4 0 0 1 2 7 4 4 0 0 1-6 5V3z"/></svg>',
   logout: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
-  logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><path d="M38 22 H52 a26 28 0 0 1 0 56 H24 Z" fill="#FFFFFF"/><path d="M14 74 L86 30" stroke="var(--logo-bg, #2E5BDB)" stroke-width="7"/></svg>'
+  logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><g transform="skewX(-12) translate(10 0)"><path d="M56 16 H72 V56 A26 26 0 0 1 20 56 H36 A10 10 0 0 0 56 56 Z" fill="#FFFFFF"/></g><path d="M10 76 L90 32" stroke="var(--logo-bg, #2E5BDB)" stroke-width="6.5"/></svg>'
 };
 
 // ---------------------------------------------------------------- Date
