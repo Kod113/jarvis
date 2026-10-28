@@ -144,6 +144,13 @@ a { color: var(--accent); }
 .tl-row.past .tl-title { color: var(--muted); text-decoration: line-through; font-weight: 400; }
 .tl-row.is-task .tl-dot { border-color: var(--accent); }
 .tl-row.is-task .tl-time { color: var(--accent); }
+.tl-row.is-event .tl-dot { background: var(--ink); border-color: var(--ink); }
+.tl-row.is-event.alt .tl-dot { background: var(--check-off); border-color: var(--check-off); }
+.tl-row.is-event.past .tl-title { text-decoration: none; }
+.ev.g1 { background: var(--ink); color: var(--bg); box-shadow: none; }
+.ev.g2 { background: var(--line); color: var(--ink); box-shadow: none; }
+.ev-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--ink); }
+.ev-dot.alt { background: var(--check-off); }
 .tl-row.now .tl-dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px var(--soft); }
 .tl-row.now .tl-time { color: var(--accent); }
 

@@ -42,7 +42,26 @@ function q(table){
 }
 export function createClient(){
   const session = { user:{ id:'u1', email:'test@example.com' } };
+  const at = (dayOffset, h, m) => { const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(h, m, 0, 0); return d.toISOString(); };
+  const events = [
+    { id:'g1', cal:'me', calName:'davsorm@gmail.com', primary:true, title:'Turno · Aeroporto', start:at(0,14,0), end:at(0,22,0), allDay:false },
+    { id:'g2', cal:'fam', calName:'Famiglia', primary:false, title:'Cena dai nonni', start:at(1,20,0), end:at(1,22,0), allDay:false },
+    { id:'g3', cal:'me', calName:'davsorm@gmail.com', primary:true, title:'Turno · Aeroporto', start:at(2,6,0), end:at(2,14,0), allDay:false },
+    { id:'g4', cal:'fam', calName:'Famiglia', primary:false, title:'Compleanno zia', start:add(4), end:add(5), allDay:true },
+  ];
+  const gstate = window.__GCAL === 'off'
+    ? { configured:true, connected:false, calendars:[] }
+    : { configured:true, connected:true, calendars:[{ calendar_id:'me', summary:'davsorm@gmail.com', enabled:true, is_primary:true }, { calendar_id:'fam', summary:'Famiglia', enabled:true, is_primary:false }] };
   return {
+    functions: {
+      async invoke(name, { body }) {
+        if (body.action === 'status') return { data: gstate, error: null };
+        if (body.action === 'events') return { data: { events: gstate.connected ? events : [] }, error: null };
+        if (body.action === 'syncTask') return { data: { eventId: 'ev-' + body.taskId }, error: null };
+        if (body.action === 'authUrl') return { data: { url: 'about:blank' }, error: null };
+        return { data: { ok: true }, error: null };
+      }
+    },
     from: q,
     auth: {
       onAuthStateChange(cb){ setTimeout(()=>cb('INITIAL_SESSION', window.__NOSESSION ? null : session), 0); return { data:{ subscription:{ unsubscribe(){} } } }; },

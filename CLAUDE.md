@@ -10,6 +10,12 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - **Backend**: Supabase, progetto `jarvis` (id `ywebxcgltxvxgqptjuxk`, regione eu-central-1, org "Mind").
   Tabelle `public.tasks`, `public.captures`, `public.expenses`, `public.health_daily`, tutte con RLS `user_id = auth.uid()`.
   Trigger `private.only_owner_signup` su `auth.users`: solo `davsorm@gmail.com` può registrarsi (e viene confermato subito).
+- Edge Functions (sorgenti in `supabase/functions/`, deploy con `deploy_edge_function` includendo `../_shared/google.ts`):
+  - `google-oauth` (verify_jwt **false**): ritorno OAuth da Google, salva i token in `google_tokens` (solo service role).
+  - `gcal` (verify_jwt true): azioni `status`, `authUrl`, `events`, `syncTask`, `setCalendar`, `refreshCalendars`, `disconnect`.
+  - Segreti su Supabase: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (li inserisce David). Calendari mostrati: tabella `calendars` (Personale + Famiglia).
+  - Le task con data+ora diventano eventi sul calendario principale (`tasks.gcal_event_id`, `extendedProperties.private.jarvisTaskId`).
+  - Notion Calendar legge Google Calendar: nessuna integrazione separata.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.

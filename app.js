@@ -112,6 +112,9 @@ const S = {
   captures: [],
   expenses: [],
   health: null,
+  gcal: { configured: false, connected: false, calendars: [] },
+  events: [],
+  evRange: null,
   ui: {
     showDay: false,
     schedId: null, schedDay: null, schedTime: '',
@@ -157,6 +160,50 @@ async function loadAll() {
   S.expenses = e.data || [];
   S.health = h.data || null;
 }
+
+// ---------------------------------------------------------------- Google Calendar (Edge Function "gcal")
+async function gcal(action, payload = {}) {
+  const { data, error } = await sb.functions.invoke('gcal', { body: { action, ...payload } });
+  if (error) {
+    let msg = error.message;
+    try { const b = await error.context.json(); msg = b.error || msg; if (b.code === 'not_connected') S.gcal.connected = false; } catch { /* no body */ }
+    throw new Error(msg);
+  }
+  return data;
+}
+function monthStart(offset) { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(1); d.setMonth(d.getMonth() + offset); return d; }
+async function loadEvents(force = false) {
+  if (!S.gcal.connected) return;
+  const lo = Math.min(0, S.ui.monthOffset) - 1, hi = Math.max(0, S.ui.monthOffset) + 2;
+  if (!force && S.evRange && S.evRange[0] <= lo && S.evRange[1] >= hi) return;
+  try {
+    const r = await gcal('events', { from: monthStart(lo).toISOString(), to: monthStart(hi).toISOString() });
+    S.events = r.events || [];
+    S.evRange = [lo, hi];
+  } catch (err) { console.warn(err); }
+}
+async function loadGcal() {
+  try {
+    S.gcal = await gcal('status');
+    S.evRange = null;
+    await loadEvents(true);
+  } catch (err) { console.warn('gcal', err); }
+}
+async function syncTask(id) {
+  if (!S.gcal.connected) return;
+  try {
+    const r = await gcal('syncTask', { taskId: id });
+    const t = S.tasks.find((x) => x.id === id);
+    if (t) t.gcal_event_id = r.eventId;
+  } catch (err) { toast('Calendario: ' + err.message); }
+}
+// Eventi Google di un giorno (esclusi quelli creati da Jarvis per una task, già mostrati come task).
+function eventsOn(day) {
+  return S.events.filter((e) => !e.taskId && (e.allDay ? e.start <= day && day < e.end : ymd(new Date(e.start)) === day))
+    .sort((a, b) => (a.allDay ? '0' : '1' + a.start).localeCompare(b.allDay ? '0' : '1' + b.start));
+}
+const evTime = (e) => (e.allDay ? 'giorno' : hhmm(new Date(e.start).toTimeString()));
+const evEnd = (e) => (e.allDay ? '' : hhmm(new Date(e.end).toTimeString()));
 
 async function addTask(title, extra = {}) {
   const row = { title, ...extra };
@@ -381,12 +428,20 @@ function tasksCardHtml() {
 }
 
 function timelineHtml(day, withNow) {
+  const n = nowHHMM();
+  const isToday = day === todayYmd();
   const items = tasksOn(day).filter((x) => x.due_time).map((x) => ({
     time: hhmm(x.due_time), title: x.title, meta: x.done ? 'Fatto' : 'Task', cls: x.done ? 'past' : 'is-task'
   }));
+  const evs = eventsOn(day);
+  evs.filter((e) => !e.allDay).forEach((e) => items.push({
+    time: evTime(e), title: e.title, meta: `${e.calName} · fino alle ${evEnd(e)}`,
+    cls: `is-event ${e.primary ? '' : 'alt'} ${isToday && evEnd(e) <= n ? 'past' : ''}`
+  }));
+  items.sort((a, b) => a.time.localeCompare(b.time));
+  evs.filter((e) => e.allDay).reverse().forEach((e) => items.unshift({ time: '—', title: e.title, meta: `${e.calName} · tutto il giorno`, cls: `is-event ${e.primary ? '' : 'alt'}` }));
   if (withNow) {
-    const n = nowHHMM();
-    const idx = items.findIndex((i) => i.time > n);
+    const idx = items.findIndex((i) => i.time !== '—' && i.time > n);
     const nowRow = { time: 'ora', title: n, meta: 'Adesso', cls: 'now' };
     if (idx < 0) items.push(nowRow); else items.splice(idx, 0, nowRow);
   }
@@ -427,10 +482,14 @@ function bodyCardHtml(cls = 'span2') {
 
 function nextCardHtml() {
   const n = nowHHMM();
-  const next = tasksOn(todayYmd()).filter((x) => x.due_time && !x.done && hhmm(x.due_time) >= n)[0];
+  const day = todayYmd();
+  const cands = tasksOn(day).filter((x) => x.due_time && !x.done && hhmm(x.due_time) >= n).map((x) => ({ time: hhmm(x.due_time), title: x.title, meta: 'Task' }))
+    .concat(eventsOn(day).filter((e) => !e.allDay && evEnd(e) > n).map((e) => ({ time: evTime(e), title: e.title, meta: evTime(e) < n ? `In corso · fino alle ${evEnd(e)}` : e.calName })));
+  cands.sort((a, b) => a.time.localeCompare(b.time));
+  const next = cands[0];
   return `<button class="card tall tile-btn" data-action="toggleDay" aria-expanded="${S.ui.showDay}">
     <span class="card-label"><span>Prossimo</span></span>
-    ${next ? `<span class="card-big">${hhmm(next.due_time)}</span><span class="card-strong push">${esc(next.title)}</span>`
+    ${next ? `<span class="card-big">${next.time}</span><span class="card-strong push">${esc(next.title)}</span><span class="tl-meta">${esc(next.meta)}</span>`
       : `<span class="card-big">—</span><span class="card-strong push">Niente in programma</span>`}
     <span class="link">${S.ui.showDay ? 'Chiudi giornata ↑' : 'Vedi giornata ↓'}</span>
   </button>`;
@@ -466,9 +525,10 @@ function monthGridHtml(offset, sel, compact = false) {
   for (let i = 0; i < lead; i++) cells.push(`<div class="cell out"><span class="n">${addDays(first, i - lead).getDate()}</span></div>`);
   for (let d = 1; d <= days; d++) {
     const id = ymd(new Date(y, m, d));
-    const items = tasksOn(id);
+    const items = eventsOn(id).map((e) => ({ cls: e.primary ? 'g1' : 'g2', time: e.allDay ? '' : evTime(e), title: e.title }))
+      .concat(tasksOn(id).map((x) => ({ cls: x.done ? 'done' : '', time: x.due_time ? hhmm(x.due_time) : '', title: x.title })));
     const max = compact ? 2 : 3;
-    const evs = items.slice(0, max).map((x) => `<span class="ev ${x.done ? 'done' : ''}">${x.due_time ? hhmm(x.due_time) + ' ' : ''}${esc(x.title)}</span>`).join('');
+    const evs = items.slice(0, max).map((x) => `<span class="ev ${x.cls}">${x.time ? x.time + ' ' : ''}${esc(x.title)}</span>`).join('');
     const more = items.length > max ? `<span class="more">+${items.length - max}</span>` : '';
     const dots = items.length ? `<span class="dots">${items.slice(0, 3).map(() => '<i></i>').join('')}</span>` : '';
     cells.push(`<button class="cell ${id === sel ? 'sel' : ''} ${id === t ? 'today' : ''} ${id < t ? 'past' : ''}" data-action="calSel" data-id="${id}"><span class="n">${d}</span>${evs}${more}${dots}</button>`);
@@ -484,10 +544,37 @@ function dayPanelHtml(day) {
   const diff = Math.round((d - parseYmd(todayYmd())) / 864e5);
   const sub = diff === 0 ? 'Oggi' : diff === 1 ? 'Domani' : diff < 0 ? 'Passato' : `Tra ${diff} giorni`;
   const list = tasksOn(day);
+  const evs = eventsOn(day);
   return `<div class="card">
     <p class="card-label"><span>${sub}</span></p>
     <h2 style="margin:0;font-size:18px;font-weight:600">${longDate(d)}</h2>
-    ${list.length ? `<div>${list.map(taskRowHtml).join('')}</div>` : '<p class="empty">Giornata libera.</p>'}
+    ${evs.length ? eventListHtml(evs) : ''}
+    ${list.length ? `<div>${list.map(taskRowHtml).join('')}</div>` : ''}
+    ${!list.length && !evs.length ? '<p class="empty">Giornata libera.</p>' : ''}
+  </div>`;
+}
+
+function eventListHtml(evs) {
+  return `<div class="list">${evs.map((e) => `<div class="li">
+    <span class="ev-dot ${e.primary ? '' : 'alt'}"></span>
+    <div class="li-main"><span class="li-title">${esc(e.title)}</span><span class="li-meta">${e.allDay ? 'Tutto il giorno' : `${evTime(e)} – ${evEnd(e)}`} · ${esc(e.calName)}${e.location ? ' · ' + esc(e.location) : ''}</span></div>
+  </div>`).join('')}</div>`;
+}
+
+function gcalCardHtml(cls = 'span2') {
+  if (!S.gcal.configured || S.gcal.connected) return '';
+  return `<div class="card ${cls}">
+    <p class="card-label"><span>Google Calendar</span><span>anche Notion Calendar</span></p>
+    <p class="card-strong">Collega il calendario per vedere i tuoi eventi qui e mettere in calendario le task.</p>
+    <button class="btn primary" data-action="connectGoogle">Collega Google Calendar</button>
+  </div>`;
+}
+
+function calendarsCardHtml() {
+  if (!S.gcal.connected) return gcalCardHtml('');
+  return `<div class="card">
+    <p class="card-label"><span>Calendari mostrati</span></p>
+    <div class="chips">${S.gcal.calendars.map((c) => `<button class="chip ${c.enabled ? 'on' : ''}" data-action="toggleCal" data-id="${esc(c.calendar_id)}">${esc(c.is_primary ? 'Personale' : c.summary)}</button>`).join('')}</div>
   </div>`;
 }
 
@@ -503,6 +590,7 @@ function viewOggi() {
       ${trainingCardHtml()}
       ${toggled}
       ${tasksCardHtml()}
+      ${gcalCardHtml()}
       ${inboxBarHtml()}
       ${bodyCardHtml()}
     </div>`;
@@ -510,7 +598,7 @@ function viewOggi() {
   return `${headHtml(longDate(d), 'Oggi')}
   <div class="desk">
     <div class="desk-left">
-      <div class="grid2">${nextCardHtml()}${trainingCardHtml()}${toggled}${tasksCardHtml()}${bodyCardHtml()}</div>
+      <div class="grid2">${nextCardHtml()}${trainingCardHtml()}${toggled}${tasksCardHtml()}${gcalCardHtml()}${bodyCardHtml()}</div>
       <div class="card"><p class="card-label"><span>Da smistare</span><span class="mono">${inbox().length}</span></p>${inboxListHtml(5)}
         <button class="link" data-action="go" data-id="settimana" style="align-self:flex-start">Smista in Settimana →</button></div>
     </div>
@@ -543,6 +631,7 @@ function viewCalendario() {
     <div class="cal">${monthGridHtml(S.ui.monthOffset, S.ui.calSel)}</div>
     <div class="cal-side">
       ${dayPanelHtml(S.ui.calSel)}
+      ${calendarsCardHtml()}
       <div class="card"><p class="card-label"><span>Da smistare · metti nel giorno scelto</span><span class="mono">${inbox().length}</span></p>${inboxListHtml(8, true, S.ui.calSel)}</div>
     </div>
   </div>`;
@@ -558,11 +647,12 @@ function viewSettimana() {
   const t = todayYmd();
   const strip = [0, 1, 2, 3, 4, 5, 6].map((i) => {
     const d = addDays(mon, i); const id = ymd(d);
-    return `<button class="day-btn ${id === u.weekSel ? 'on' : ''} ${tasksOn(id).length ? 'busy' : ''} ${id === t ? 'today' : ''}" data-action="weekSel" data-id="${id}">
+    return `<button class="day-btn ${id === u.weekSel ? 'on' : ''} ${tasksOn(id).length || eventsOn(id).length ? 'busy' : ''} ${id === t ? 'today' : ''}" data-action="weekSel" data-id="${id}">
       <span class="dow">${DOW[i].charAt(0)}</span><span class="num">${d.getDate()}</span><span class="dot"></span></button>`;
   }).join('');
   const sel = parseYmd(u.weekSel);
   const list = tasksOn(u.weekSel);
+  const dayEvs = eventsOn(u.weekSel);
 
   // Riepilogo settimana scorsa
   const pMon = addDays(mondayOf(new Date()), -7); const pSun = addDays(pMon, 6);
@@ -576,8 +666,10 @@ function viewSettimana() {
       <button class="pill-badge" data-action="go" data-id="calendario">Mese</button></div>`)}
   <div class="week-strip">${strip}</div>
   <div class="card">
-    <p class="card-label"><span>${longDate(sel)}</span><span>${list.length} ${list.length === 1 ? 'cosa' : 'cose'}</span></p>
-    ${list.length ? list.map(taskRowHtml).join('') : '<p class="empty">Niente in programma.</p>'}
+    <p class="card-label"><span>${longDate(sel)}</span><span>${list.length + dayEvs.length} ${list.length + dayEvs.length === 1 ? 'cosa' : 'cose'}</span></p>
+    ${dayEvs.length ? eventListHtml(dayEvs) : ''}
+    ${list.map(taskRowHtml).join('')}
+    ${!list.length && !dayEvs.length ? '<p class="empty">Niente in programma.</p>' : ''}
   </div>
   <div class="card">
     <p class="card-label"><span>Inbox · da smistare</span><span class="mono">${inbox().length}</span></p>
@@ -722,15 +814,25 @@ const actions = {
   schedDay(id) { S.ui.schedDay = id; render(); },
   schedTime(id) { S.ui.schedTime = id; render(); },
   closeSched() { S.ui.schedId = null; render(); },
-  confirmSched() {
+  async confirmSched() {
     const id = S.ui.schedId; if (!id) return;
     const day = S.ui.schedDay || todayYmd();
     const time = S.ui.schedTime || null;
     const isToday = day === todayYmd();
     S.ui.schedId = null;
     if (isToday && time) S.ui.showDay = true;
-    updateTask(id, { due_date: day, due_time: time, rescheduled_at: isToday ? null : new Date().toISOString() });
-    toast(isToday ? (time ? `In calendario oggi alle ${time}` : 'Messa per oggi') : `Spostata a ${dayLabel(day)}${time ? ' alle ' + time : ''}`);
+    const g = S.gcal.connected && time ? ' · anche su Google' : '';
+    toast(isToday ? (time ? `In calendario oggi alle ${time}${g}` : 'Messa per oggi') : `Spostata a ${dayLabel(day)}${time ? ' alle ' + time : ''}${g}`);
+    await updateTask(id, { due_date: day, due_time: time, rescheduled_at: isToday ? null : new Date().toISOString() });
+    await syncTask(id);
+  },
+  async connectGoogle() {
+    try { const r = await gcal('authUrl'); window.location.href = r.url; } catch (err) { fail(err); }
+  },
+  async toggleCal(id) {
+    const c = S.gcal.calendars.find((x) => x.calendar_id === id); if (!c) return;
+    c.enabled = !c.enabled; render();
+    try { await gcal('setCalendar', { calendarId: id, enabled: c.enabled }); await loadEvents(true); render(); } catch (err) { fail(err); }
   },
   week(id) {
     S.ui.weekOffset += Number(id);
@@ -739,7 +841,7 @@ const actions = {
     render();
   },
   weekSel(id) { S.ui.weekSel = id; render(); },
-  month(id) { S.ui.monthOffset += Number(id); render(); },
+  async month(id) { S.ui.monthOffset += Number(id); render(); await loadEvents(); render(); },
   monthToday() { S.ui.monthOffset = 0; S.ui.calSel = todayYmd(); render(); },
   calSel(id) { S.ui.calSel = id; render(); },
   async planCapture(id) {
@@ -875,6 +977,15 @@ async function onSession(session) {
   }
   S.loading = false;
   render();
+  if (session) {
+    await loadGcal();
+    render();
+    const g = new URLSearchParams(location.search).get('google');
+    if (g) {
+      history.replaceState(null, '', location.pathname);
+      toast({ ok: 'Google Calendar collegato', denied: 'Collegamento annullato', error: 'Collegamento non riuscito, riprova' }[g] || '');
+    }
+  }
 }
 
 applyTheme();
@@ -885,7 +996,7 @@ document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !S.session) return;
   applyTheme();
   if (todayYmd() !== lastDay) { lastDay = todayYmd(); S.ui.weekSel = lastDay; S.ui.calSel = lastDay; }
-  try { await loadAll(); render(); } catch { /* offline */ }
+  try { await loadAll(); await loadEvents(true); render(); } catch { /* offline */ }
 });
 
 sb.auth.onAuthStateChange((event, session) => {
