@@ -82,8 +82,21 @@ a { color: var(--accent); }
 .zones span.on { background: var(--accent); }
 
 .stats3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.stat-l { margin: 0; font-size: 12px; color: var(--muted); }
-.stat-v { margin: 2px 0 0; font-family: var(--mono); font-size: 17px; }
+.stat-l { display: block; margin: 0; font-size: 12px; color: var(--muted); }
+.stat-v { display: block; margin: 2px 0 0; font-family: var(--mono); font-size: 17px; }
+
+button.card { border: 0; text-align: left; color: inherit; font: inherit; }
+.stats3 { row-gap: 12px; }
+.stat-v small { font-size: 12px; color: var(--muted); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.bars { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.bar-col { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.bar-track { width: 100%; max-width: 28px; height: 90px; border-radius: 8px; background: var(--line-2); display: flex; align-items: flex-end; overflow: hidden; }
+.bar-track span { width: 100%; background: var(--soft); border-radius: 8px; }
+.bar-col.today .bar-track span { background: var(--accent); }
+.bar-v { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; min-height: 13px; }
+.bar-l { font-size: 11px; color: var(--muted); }
+.bar-col.today .bar-l { color: var(--accent); font-weight: 600; }
 
 /* ---------- Task ---------- */
 .tasks { padding: 12px 8px 12px 16px; gap: 0; }

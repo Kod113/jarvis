@@ -16,6 +16,11 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   - Segreti su Supabase: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (li inserisce David). Calendari mostrati: tabella `calendars` (Personale + Famiglia).
   - Le task con data+ora diventano eventi sul calendario principale (`tasks.gcal_event_id`, `extendedProperties.private.jarvisTaskId`).
   - Notion Calendar legge Google Calendar: nessuna integrazione separata.
+- Garmin: `.github/workflows/garmin.yml` (5 volte al giorno + manuale + push su `tools/garmin/**`, al push sincronizza 30 giorni) esegue
+  `tools/garmin/sync.py` (libreria non ufficiale `garminconnect`), che invia a `garmin-ingest` (verify_jwt false, header `x-ingest-token` =
+  segreto `JARVIS_INGEST_TOKEN`). Tabelle `health_daily` (sonno, FC, HRV, Body Battery, prontezza, passi) e `activities`.
+  Segreti GitHub: `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `JARVIS_INGEST_TOKEN`. Token Garmin in cache cifrati (repo pubblico: mai stampare dati).
+  Per rilanciare la sync senza token gh: aggiorna `tools/garmin/LAST_TRIGGER` e fai push.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.
@@ -36,7 +41,6 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 ## Idee/roadmap (chieste da David)
 - Spese: tasto "Invia a Notion" che ogni settimana manda le voci al database spese Notion già alimentato da Trade Republic.
 - Comandi Rapidi iOS: automazione Wallet (pagamento NFC → nome, categoria, importo) e "Ehi Siri, Jarvis" per catturare a voce.
-- Garmin: sync notturno di sonno, FC a riposo, HRV, allenamento del giorno in `health_daily`.
 - Google Calendar: eventi e turni nel calendario; "Metti in calendario" crea l'evento.
 - "Decide Jarvis": oggi smistamento a parole chiave (`classify()` in app.js); in futuro AI.
 - Mente: da approfondire più avanti (libri sincronizzati con Notion, argomenti da studiare).

@@ -1,0 +1,67 @@
+name: Garmin → Jarvis
+
+on:
+  schedule:
+    # Orari in UTC: circa 6:30, 9:30, 13:30, 19:30 e 23:30 a Roma (ora solare)
+    - cron: "30 5,8,12,18,22 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Giorni da sincronizzare"
+        default: "3"
+  push:
+    branches: [main]
+    paths: ["tools/garmin/**", ".github/workflows/garmin.yml"]
+
+concurrency:
+  group: garmin
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GARMINTOKENS: /home/runner/.garminconnect
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # I token Garmin vengono salvati in cache CIFRATI (il repo è pubblico).
+      - name: Ripristina i token Garmin
+        uses: actions/cache/restore@v4
+        with:
+          path: garmin-tokens.enc
+          key: garmin-tokens-${{ github.run_id }}
+          restore-keys: garmin-tokens-
+      - name: Decifra i token
+        env:
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+        run: |
+          mkdir -p "$GARMINTOKENS"
+          if [ -f garmin-tokens.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -pass env:GARMIN_PASSWORD -in garmin-tokens.enc | tar xzf - -C "$GARMINTOKENS" || echo "Token non validi, nuovo accesso"
+          fi
+      - run: pip install --quiet garminconnect==0.3.20
+      - name: Sincronizza
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          JARVIS_INGEST_TOKEN: ${{ secrets.JARVIS_INGEST_TOKEN }}
+          GARMIN_DAYS: ${{ github.event.inputs.days || (github.event_name == 'push' && '30') || '3' }}
+        run: python tools/garmin/sync.py
+      - name: Cifra i token
+        if: always()
+        env:
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+        run: |
+          if [ -n "$(ls -A "$GARMINTOKENS" 2>/dev/null)" ] && [ -n "$GARMIN_PASSWORD" ]; then
+            tar czf - -C "$GARMINTOKENS" . | openssl enc -aes-256-cbc -pbkdf2 -pass env:GARMIN_PASSWORD -out garmin-tokens.enc
+          fi
+      - name: Salva i token Garmin
+        if: always() && hashFiles('garmin-tokens.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: garmin-tokens.enc
+          key: garmin-tokens-${{ github.run_id }}

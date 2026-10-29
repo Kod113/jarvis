@@ -45,6 +45,7 @@ const I = {
   week: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   wallet: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M15 15h3"/></svg>',
   mind: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3a4 4 0 0 0-4 4 4 4 0 0 0-2 7 4 4 0 0 0 6 5V3zM15 3a4 4 0 0 1 4 4 4 4 0 0 1 2 7 4 4 0 0 1-6 5V3z"/></svg>',
+  heart: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-4 3 8 2-4h7"/></svg>',
   logout: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
   logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><g transform="skewX(-12) translate(10 0)"><path d="M56 16 H72 V56 A26 26 0 0 1 20 56 H36 A10 10 0 0 0 56 56 Z" fill="#FFFFFF"/></g><path d="M10 76 L90 32" stroke="var(--logo-bg, #2E5BDB)" stroke-width="6.5"/></svg>'
 };
@@ -112,6 +113,8 @@ const S = {
   captures: [],
   expenses: [],
   health: null,
+  healthDays: [],
+  activities: [],
   gcal: { configured: false, connected: false, calendars: [] },
   events: [],
   evRange: null,
@@ -148,18 +151,37 @@ async function loadAll() {
   const since = new Date(); since.setDate(since.getDate() - 75);
   const sinceIso = since.toISOString();
   const sinceDay = ymd(since);
-  const [t, c, e, h] = await Promise.all([
+  const [t, c, e, h, a] = await Promise.all([
     sb.from('tasks').select('*').or(`done.eq.false,done_at.gte.${sinceIso},due_date.gte.${sinceDay}`).order('created_at').limit(2000),
     sb.from('captures').select('*').in('status', ['inbox', 'archived']).order('created_at', { ascending: false }).limit(1000),
     sb.from('expenses').select('*').gte('spent_at', sinceIso).order('spent_at', { ascending: false }).limit(2000),
-    sb.from('health_daily').select('*').eq('day', todayYmd()).maybeSingle()
+    sb.from('health_daily').select('*').gte('day', sinceDay).order('day', { ascending: false }).limit(120),
+    sb.from('activities').select('*').gte('day', sinceDay).order('start_time', { ascending: false }).limit(500)
   ]);
   for (const r of [t, c, e]) if (r.error) throw r.error;
   S.tasks = t.data || [];
   S.captures = c.data || [];
   S.expenses = e.data || [];
-  S.health = h.data || null;
+  S.healthDays = h.data || [];
+  S.activities = a.data || [];
+  S.health = S.healthDays.find((x) => x.day === todayYmd()) || null;
 }
+
+// ---------------------------------------------------------------- Garmin
+const ACT_LABEL = {
+  running: 'Corsa', trail_running: 'Trail', treadmill_running: 'Tapis roulant', track_running: 'Pista', walking: 'Camminata', hiking: 'Escursione',
+  cycling: 'Bici', indoor_cycling: 'Bici indoor', road_biking: 'Bici', strength_training: 'Forza', indoor_cardio: 'Cardio', hiit: 'HIIT',
+  yoga: 'Yoga', pilates: 'Pilates', lap_swimming: 'Nuoto', open_water_swimming: 'Nuoto', breathwork: 'Respirazione', other: 'Allenamento'
+};
+const actLabel = (a) => ACT_LABEL[a.type] || (a.type ? a.type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : 'Allenamento');
+const actZone = (a) => { const z = a.zones_s || []; if (!z.some((v) => v > 0)) return 0; return z.indexOf(Math.max(...z)) + 1; };
+const durLabel = (s) => { if (!s) return ''; const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)}h${pad(m % 60)}` : `${m}'`; };
+const kmLabel = (m) => (m ? `${(m / 1000).toLocaleString('it-IT', { maximumFractionDigits: 1 })} km` : '');
+const sleepLabel = (mins) => (mins ? `${Math.floor(mins / 60)}h${pad(mins % 60)}` : '—');
+const READY_IT = { PRIME: 'Ottima', HIGH: 'Alta', MODERATE: 'Moderata', LOW: 'Bassa', POOR: 'Scarsa' };
+const HRV_IT = { BALANCED: 'Bilanciato', UNBALANCED: 'Sbilanciato', LOW: 'Basso', POOR: 'Scarso' };
+const activitiesOn = (day) => (S.activities || []).filter((a) => a.day === day);
+const garminLinked = () => (S.healthDays || []).length > 0 || (S.activities || []).length > 0;
 
 // ---------------------------------------------------------------- Google Calendar (Edge Function "gcal")
 async function gcal(action, payload = {}) {
@@ -351,9 +373,10 @@ function navHtml() {
     { id: 'calendario', label: 'Calendario', icon: I.cal, wideOnly: true },
     { id: 'settimana', label: 'Settimana', icon: I.week },
     { id: 'spese', label: 'Spese', icon: I.wallet },
-    { id: 'mente', label: 'Mente', icon: I.mind }
+    { id: 'mente', label: 'Mente', icon: I.mind },
+    { id: 'corpo', label: 'Corpo', icon: I.heart, wideOnly: true }
   ];
-  const bottomView = S.view === 'calendario' ? 'settimana' : S.view;
+  const bottomView = S.view === 'calendario' ? 'settimana' : S.view === 'corpo' ? 'oggi' : S.view;
   return `
   <nav class="rail" aria-label="Sezioni">
     <div class="logo">${I.logo}</div>
@@ -453,30 +476,111 @@ function timelineHtml(day, withNow) {
   </div>`).join('')}</div>`;
 }
 
+function zonesBar(zone) {
+  return `<div class="zones" aria-hidden="true">${[1, 2, 3, 4, 5].map((z) => `<span class="${z === zone ? 'on' : z < zone ? 'soft' : ''}"></span>`).join('')}</div>`;
+}
+
 function trainingCardHtml(cls = '') {
-  const h = S.health;
-  const zone = h?.workout_zone || 0;
-  const zones = [1, 2, 3, 4, 5].map((z) => `<span class="${z === zone ? 'on' : z < zone ? 'soft' : ''}"></span>`).join('');
-  return `<div class="card tall ${cls}">
-    <p class="card-label"><span>Allenamento</span></p>
-    ${h?.workout_title
-      ? `<p class="card-strong">${esc(h.workout_title)}${h.workout_minutes ? ` · ${h.workout_minutes}'` : ''}</p>
-         <div class="zones push" aria-hidden="true">${zones}</div>
-         <p class="card-label"><span>${zone ? `Zona ${zone} di 5` : ''}</span></p>`
-      : `<p class="card-strong">Garmin</p><p class="card-label push"><span>Da collegare</span></p>`}
-  </div>`;
+  const today = activitiesOn(todayYmd());
+  const h = S.health || {};
+  let body;
+  if (today.length) {
+    const a = today[0];
+    const zone = actZone(a);
+    body = `<p class="card-strong">${esc(actLabel(a))} · ${durLabel(a.duration_s)}</p>
+      <p class="card-label"><span>Fatto${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${today.length > 1 ? ` · +${today.length - 1}` : ''}</span></p>
+      <div class="push">${zonesBar(zone)}</div>
+      <p class="card-label"><span>${zone ? `Zona ${zone} di 5` : (a.avg_hr ? `FC media ${a.avg_hr}` : '')}</span></p>`;
+  } else if (h.readiness != null) {
+    body = `<p class="card-strong">Prontezza ${h.readiness}</p>
+      <p class="card-label"><span>${READY_IT[h.readiness_level] || ''}</span></p>
+      <p class="card-label push"><span>Nessun allenamento oggi</span></p>`;
+  } else if (garminLinked()) {
+    body = '<p class="card-strong">Riposo</p><p class="card-label push"><span>Nessun allenamento oggi</span></p>';
+  } else {
+    body = '<p class="card-strong">Garmin</p><p class="card-label push"><span>Da collegare</span></p>';
+  }
+  return `<button class="card tall tile-btn ${cls}" data-action="go" data-id="corpo">
+    <span class="card-label"><span>Allenamento</span></span>${body}</button>`;
 }
 
 function bodyCardHtml(cls = 'span2') {
   const h = S.health || {};
-  const sleep = h.sleep_minutes ? `${Math.floor(h.sleep_minutes / 60)}h${pad(h.sleep_minutes % 60)}` : '—';
-  return `<div class="card ${cls}">
-    <p class="card-label"><span>Corpo</span><span>${S.health ? 'da Garmin' : 'Garmin da collegare'}</span></p>
-    <div class="stats3">
-      <div><p class="stat-l">Sonno</p><p class="stat-v">${sleep}</p></div>
-      <div><p class="stat-l">FC riposo</p><p class="stat-v">${h.resting_hr ?? '—'}</p></div>
-      <div><p class="stat-l">HRV</p><p class="stat-v">${h.hrv ?? '—'}</p></div>
-    </div>
+  return `<button class="card tile-btn ${cls}" data-action="go" data-id="corpo">
+    <span class="card-label"><span>Corpo</span><span>${garminLinked() ? 'da Garmin · vedi settimana →' : 'Garmin da collegare'}</span></span>
+    <span class="stats3">
+      <span><span class="stat-l">Sonno</span><span class="stat-v">${sleepLabel(h.sleep_minutes)}${h.sleep_score ? `<small> · ${h.sleep_score}</small>` : ''}</span></span>
+      <span><span class="stat-l">FC riposo</span><span class="stat-v">${h.resting_hr ?? '—'}</span></span>
+      <span><span class="stat-l">HRV</span><span class="stat-v">${h.hrv ?? '—'}</span></span>
+      <span><span class="stat-l">Body Battery</span><span class="stat-v">${h.body_battery_wake ?? h.body_battery_high ?? '—'}</span></span>
+      <span><span class="stat-l">Prontezza</span><span class="stat-v">${h.readiness ?? '—'}</span></span>
+      <span><span class="stat-l">Passi</span><span class="stat-v">${h.steps != null ? h.steps.toLocaleString('it-IT') : '—'}</span></span>
+    </span>
+  </button>`;
+}
+
+// Grafico a barre semplice per 7 giorni.
+function barsHtml(title, days, key, fmt, note = '') {
+  const vals = days.map((d) => d.h?.[key] ?? null);
+  const max = Math.max(...vals.filter((v) => v != null), 1);
+  const min = key === 'resting_hr' ? Math.max(0, Math.min(...vals.filter((v) => v != null), max) - 8) : 0;
+  const last = [...vals].reverse().find((v) => v != null);
+  return `<div class="card chart">
+    <p class="card-label"><span>${title}</span><span class="mono">${last != null ? fmt(last) : '—'}</span></p>
+    <div class="bars">${days.map((d, i) => {
+      const v = vals[i];
+      const pct = v == null ? 0 : Math.max(6, Math.round(((v - min) / (max - min || 1)) * 100));
+      return `<div class="bar-col ${d.today ? 'today' : ''}"><span class="bar-v">${v != null ? fmt(v) : ''}</span><span class="bar-track"><span style="height:${pct}%"></span></span><span class="bar-l">${d.dow}</span></div>`;
+    }).join('')}</div>
+    ${note ? `<p class="card-label"><span>${note}</span></p>` : ''}
+  </div>`;
+}
+
+function viewCorpo() {
+  const off = S.ui.corpoWeek || 0;
+  const mon = addDays(mondayOf(new Date()), off * 7);
+  const sun = addDays(mon, 6);
+  const t = todayYmd();
+  const days = [0, 1, 2, 3, 4, 5, 6].map((i) => {
+    const id = ymd(addDays(mon, i));
+    return { id, dow: DOW[i].charAt(0), today: id === t, h: (S.healthDays || []).find((x) => x.day === id) };
+  });
+  const acts = (S.activities || []).filter((a) => a.day >= ymd(mon) && a.day <= ymd(sun)).sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const totS = acts.reduce((s, a) => s + (a.duration_s || 0), 0);
+  const totM = acts.reduce((s, a) => s + Number(a.distance_m || 0), 0);
+  const load = acts.reduce((s, a) => s + Number(a.training_load || 0), 0);
+  const range = `${mon.getDate()} ${MONTHS[mon.getMonth()].slice(0, 3)} – ${sun.getDate()} ${MONTHS[sun.getMonth()].slice(0, 3)}`;
+  const last = (S.healthDays || [])[0];
+  const hrvNote = last?.hrv_status ? `Stato HRV: ${HRV_IT[last.hrv_status] || last.hrv_status}` : '';
+  if (!garminLinked()) {
+    return `${headHtml('Garmin', 'Corpo')}
+    <div class="card"><p class="card-strong">Garmin non è ancora collegato.</p><p class="empty">Appena la sincronizzazione è attiva, qui trovi allenamenti della settimana, sonno, FC a riposo, HRV e Body Battery.</p></div>`;
+  }
+  return `${headHtml(range, 'Corpo', `<div class="week-nav">
+      <button data-action="corpoWeek" data-id="-1" aria-label="Settimana precedente">${I.left}</button>
+      <button data-action="corpoWeek" data-id="1" aria-label="Settimana successiva" ${off >= 0 ? 'disabled' : ''}>${I.right}</button></div>`)}
+  <div class="grid2" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+    <div class="card"><p class="stat-l">Allenamenti</p><p class="stat-v">${acts.length}</p></div>
+    <div class="card"><p class="stat-l">Tempo</p><p class="stat-v">${durLabel(totS) || '0\''}</p></div>
+    <div class="card"><p class="stat-l">Distanza</p><p class="stat-v">${totM ? (totM / 1000).toLocaleString('it-IT', { maximumFractionDigits: 1 }) : '0'}</p></div>
+    <div class="card"><p class="stat-l">Carico</p><p class="stat-v">${Math.round(load)}</p></div>
+  </div>
+  <div class="card">
+    <p class="card-label"><span>Allenamenti della settimana</span></p>
+    <div class="list">${acts.map((a) => {
+      const zone = actZone(a);
+      return `<div class="li"><div class="li-main">
+        <span class="li-title">${esc(actLabel(a))}${a.name && a.name !== actLabel(a) ? ` <span class="muted">· ${esc(a.name)}</span>` : ''}</span>
+        <span class="li-meta">${dayLabel(a.day)} · ${durLabel(a.duration_s)}${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${a.avg_hr ? ` · FC ${a.avg_hr}` : ''}${a.aerobic_te ? ` · TE ${String(a.aerobic_te).replace('.', ',')}` : ''}</span>
+        ${zone ? `<div style="max-width:160px">${zonesBar(zone)}</div>` : ''}
+      </div>${zone ? `<span class="tag">Z${zone}</span>` : ''}</div>`;
+    }).join('') || '<p class="empty">Nessun allenamento questa settimana.</p>'}</div>
+  </div>
+  <div class="charts">
+    ${barsHtml('Sonno', days, 'sleep_minutes', sleepLabel)}
+    ${barsHtml('FC a riposo', days, 'resting_hr', (v) => String(v))}
+    ${barsHtml('HRV notturna', days, 'hrv', (v) => String(v), hrvNote)}
+    ${barsHtml('Body Battery al risveglio', days, 'body_battery_wake', (v) => String(v))}
   </div>`;
 }
 
@@ -778,7 +882,7 @@ function render() {
   const active = document.activeElement;
   const keepId = focusTarget || (active && active.id && app.contains(active) ? active.id : null);
   const sel = active && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
-  const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente };
+  const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente, corpo: viewCorpo };
   const body = (views[S.view] || viewOggi)();
   const floatToast = S.ui.toast && isWide() ? `<p class="toast float" role="status">${esc(S.ui.toast)}</p>` : '';
   app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() ? '' : captureHtml()}${floatToast}</div>`;
@@ -897,6 +1001,7 @@ const actions = {
     if (n > 0) { ls.set('budget', n); render(); }
   },
   mFilter(id) { S.ui.mFilter = id; render(); },
+  corpoWeek(id) { S.ui.corpoWeek = Math.min(0, (S.ui.corpoWeek || 0) + Number(id)); render(); },
   async logout() { await sb.auth.signOut(); },
   async signup() {
     const form = app.querySelector('[data-form="login"]');
