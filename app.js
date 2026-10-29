@@ -46,6 +46,9 @@ const I = {
   wallet: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M15 15h3"/></svg>',
   mind: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3a4 4 0 0 0-4 4 4 4 0 0 0-2 7 4 4 0 0 0 6 5V3zM15 3a4 4 0 0 1 4 4 4 4 0 0 1 2 7 4 4 0 0 1-6 5V3z"/></svg>',
   heart: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-4 3 8 2-4h7"/></svg>',
+  run: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4.5" r="2"/><path d="M13.5 8 10.5 13l3.5 2.5-1 5"/><path d="M10.5 13 8 17H4.5"/><path d="m13.5 8 3.5 2.5 2.5-1.5"/><path d="M13.5 8 10 8.5 8 10.5"/></svg>',
+  barbell: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h20"/><rect x="5" y="7" width="3" height="10" rx="1"/><rect x="16" y="7" width="3" height="10" rx="1"/><path d="M3.5 9.5v5M20.5 9.5v5"/></svg>',
+  checkBig: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   logout: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
   logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><g transform="skewX(-12) translate(10 0)"><path d="M56 16 H72 V56 A26 26 0 0 1 20 56 H36 A10 10 0 0 0 56 56 Z" fill="#FFFFFF"/></g><path d="M10 76 L90 32" stroke="var(--logo-bg, #2E5BDB)" stroke-width="6.5"/></svg>'
 };
@@ -174,6 +177,14 @@ const ACT_LABEL = {
   yoga: 'Yoga', pilates: 'Pilates', lap_swimming: 'Nuoto', open_water_swimming: 'Nuoto', breathwork: 'Respirazione', other: 'Allenamento'
 };
 const actLabel = (a) => ACT_LABEL[a.type] || (a.type ? a.type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : 'Allenamento');
+const RUN_TYPES = ['running', 'trail_running', 'treadmill_running', 'track_running', 'indoor_running', 'virtual_run'];
+const STRENGTH_TYPES = ['strength_training', 'weight_training'];
+function actIcon(a) {
+  const run = RUN_TYPES.includes(a.type);
+  const str = STRENGTH_TYPES.includes(a.type);
+  const svg = run ? I.run : str ? I.barbell : I.heart;
+  return `<span class="act-icon ${run ? 'run' : str ? 'str' : ''}" aria-label="${run ? 'Corsa' : str ? 'Forza' : 'Allenamento'}">${svg}</span>`;
+}
 const actZone = (a) => { const z = a.zones_s || []; if (!z.some((v) => v > 0)) return 0; return z.indexOf(Math.max(...z)) + 1; };
 const durLabel = (s) => { if (!s) return ''; const m = Math.round(s / 60); return m >= 60 ? `${Math.floor(m / 60)}h${pad(m % 60)}` : `${m}'`; };
 const kmLabel = (m) => (m ? `${(m / 1000).toLocaleString('it-IT', { maximumFractionDigits: 1 })} km` : '');
@@ -486,11 +497,9 @@ function trainingCardHtml(cls = '') {
   let body;
   if (today.length) {
     const a = today[0];
-    const zone = actZone(a);
-    body = `<p class="card-strong">${esc(actLabel(a))} · ${durLabel(a.duration_s)}</p>
-      <p class="card-label"><span>Fatto${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${today.length > 1 ? ` · +${today.length - 1}` : ''}</span></p>
-      <div class="push">${zonesBar(zone)}</div>
-      <p class="card-label"><span>${zone ? `Zona ${zone} di 5` : (a.avg_hr ? `FC media ${a.avg_hr}` : '')}</span></p>`;
+    body = `<span class="act-head">${actIcon(a)}<span class="card-strong">${esc(actLabel(a))} · ${durLabel(a.duration_s)}</span></span>
+      <p class="card-label push"><span>Fatto${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${today.length > 1 ? ` · +${today.length - 1}` : ''}</span></p>
+      <p class="card-label"><span>${a.avg_hr ? `FC media ${a.avg_hr}` : ''}</span></p>`;
   } else if (h.readiness != null) {
     body = `<p class="card-strong">Prontezza ${h.readiness}</p>
       <p class="card-label"><span>${READY_IT[h.readiness_level] || ''}</span></p>
@@ -568,12 +577,10 @@ function viewCorpo() {
   <div class="card">
     <p class="card-label"><span>Allenamenti della settimana</span></p>
     <div class="list">${acts.map((a) => {
-      const zone = actZone(a);
-      return `<div class="li"><div class="li-main">
+      return `<div class="li">${actIcon(a)}<div class="li-main">
         <span class="li-title">${esc(actLabel(a))}${a.name && a.name !== actLabel(a) ? ` <span class="muted">· ${esc(a.name)}</span>` : ''}</span>
         <span class="li-meta">${dayLabel(a.day)} · ${durLabel(a.duration_s)}${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${a.avg_hr ? ` · FC ${a.avg_hr}` : ''}${a.aerobic_te ? ` · TE ${String(a.aerobic_te).replace('.', ',')}` : ''}</span>
-        ${zone ? `<div style="max-width:160px">${zonesBar(zone)}</div>` : ''}
-      </div>${zone ? `<span class="tag">Z${zone}</span>` : ''}</div>`;
+      </div></div>`;
     }).join('') || '<p class="empty">Nessun allenamento questa settimana.</p>'}</div>
   </div>
   <div class="charts">
@@ -591,10 +598,11 @@ function nextCardHtml() {
     .concat(eventsOn(day).filter((e) => !e.allDay && evEnd(e) > n).map((e) => ({ time: evTime(e), title: e.title, meta: evTime(e) < n ? `In corso · fino alle ${evEnd(e)}` : e.calName })));
   cands.sort((a, b) => a.time.localeCompare(b.time));
   const next = cands[0];
+  const hadToday = tasksOn(day).some((x) => x.due_time) || eventsOn(day).some((e) => !e.allDay);
   return `<button class="card tall tile-btn" data-action="toggleDay" aria-expanded="${S.ui.showDay}">
     <span class="card-label"><span>Prossimo</span></span>
     ${next ? `<span class="card-big">${next.time}</span><span class="card-strong push">${esc(next.title)}</span><span class="tl-meta">${esc(next.meta)}</span>`
-      : `<span class="card-big">—</span><span class="card-strong push">Niente in programma</span>`}
+      : `<span class="done-badge" aria-hidden="true">${I.checkBig}</span><span class="card-strong push">${hadToday ? 'Per oggi hai fatto tutto' : 'Giornata libera'}</span><span class="tl-meta">${hadToday ? 'Niente altro oggi' : 'Nessun impegno oggi'}</span>`}
     <span class="link">${S.ui.showDay ? 'Chiudi giornata ↑' : 'Vedi giornata ↓'}</span>
   </button>`;
 }
