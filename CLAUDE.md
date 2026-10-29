@@ -12,7 +12,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Trigger `private.only_owner_signup` su `auth.users`: solo `davsorm@gmail.com` può registrarsi (e viene confermato subito).
 - Edge Functions (sorgenti in `supabase/functions/`, deploy con `deploy_edge_function` includendo `../_shared/google.ts`):
   - `google-oauth` (verify_jwt **false**): ritorno OAuth da Google, salva i token in `google_tokens` (solo service role).
-  - `gcal` (verify_jwt true): azioni `status`, `authUrl`, `events`, `syncTask`, `setCalendar`, `refreshCalendars`, `disconnect`.
+  - `gcal` (verify_jwt false, autenticazione interna con getUser): azioni `status`, `authUrl`, `events`, `syncTask`, `setCalendar`, `refreshCalendars`, `disconnect`.
   - Segreti su Supabase: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (li inserisce David). Calendari mostrati: tabella `calendars` (Personale + Famiglia).
   - Le task con data+ora diventano eventi sul calendario principale (`tasks.gcal_event_id`, `extendedProperties.private.jarvisTaskId`).
   - Notion Calendar legge Google Calendar: nessuna integrazione separata.

@@ -562,10 +562,11 @@ function eventListHtml(evs) {
 }
 
 function gcalCardHtml(cls = 'span2') {
-  if (!S.gcal.configured || S.gcal.connected) return '';
+  if (S.gcal.connected) return '';
   return `<div class="card ${cls}">
     <p class="card-label"><span>Google Calendar</span><span>anche Notion Calendar</span></p>
     <p class="card-strong">Collega il calendario per vedere i tuoi eventi qui e mettere in calendario le task.</p>
+    ${S.gcal.configured ? '' : '<p class="card-label"><span>Se non funziona: controlla le chiavi Google nei segreti di Supabase.</span></p>'}
     <button class="btn primary" data-action="connectGoogle">Collega Google Calendar</button>
   </div>`;
 }

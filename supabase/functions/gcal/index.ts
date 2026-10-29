@@ -1,7 +1,7 @@
 // API Google Calendar per l'app. Chiamata con supabase.functions.invoke('gcal', { body: { action, ... } }).
 // Azioni: status, authUrl, events, syncTask, setCalendar, disconnect.
-import { createClient } from 'npm:@supabase/supabase-js@2.117.2';
-import { accessToken, admin, env, gfetch, makeState, REDIRECT_URI, refreshCalendars, SCOPES, SUPABASE_URL } from '../_shared/google.ts';
+// verify_jwt = false: l'autenticazione la fa la funzione stessa (getUser con il JWT dell'utente).
+import { accessToken, admin, env, gfetch, makeState, REDIRECT_URI, refreshCalendars, SCOPES } from '../_shared/google.ts';
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -22,11 +22,14 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   try {
     const auth = req.headers.get('authorization') || '';
-    const userDb = createClient(env('SUPABASE_URL') || SUPABASE_URL, env('SUPABASE_ANON_KEY'), { global: { headers: { authorization: auth } }, auth: { persistSession: false } });
-    const { data: { user } } = await userDb.auth.getUser(auth.replace(/^Bearer\s+/i, ''));
-    if (!user) return json({ error: 'Non autenticato' }, 401);
-    const body = await req.json().catch(() => ({}));
+    const jwt = auth.replace(/^Bearer\s+/i, '');
     const db = admin();
+    const { data: { user }, error: authErr } = await db.auth.getUser(jwt);
+    if (!user) {
+      console.error('auth failed', authErr?.message, { hasJwt: !!jwt, hasService: !!env('SUPABASE_SERVICE_ROLE_KEY') });
+      return json({ error: 'Non autenticato' }, 401);
+    }
+    const body = await req.json().catch(() => ({}));
 
     switch (body.action) {
       case 'status': {
@@ -36,7 +39,7 @@ Deno.serve(async (req) => {
         return json({ configured, connected: !!tok, calendars: cals || [] });
       }
       case 'authUrl': {
-        if (!env('GOOGLE_CLIENT_ID')) return json({ error: 'Credenziali Google mancanti su Supabase' }, 400);
+        if (!env('GOOGLE_CLIENT_ID') || !env('GOOGLE_CLIENT_SECRET')) return json({ error: 'Mancano GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET nei segreti di Supabase' }, 400);
         const p = new URLSearchParams({
           client_id: env('GOOGLE_CLIENT_ID'),
           redirect_uri: REDIRECT_URI,
@@ -78,7 +81,7 @@ Deno.serve(async (req) => {
       }
       case 'syncTask': {
         // Crea / aggiorna / rimuove l'evento su Google per una task con data e ora.
-        const { data: task } = await userDb.from('tasks').select('id, title, due_date, due_time, gcal_event_id').eq('id', body.taskId).maybeSingle() as { data: Task | null };
+        const { data: task } = await db.from('tasks').select('id, title, due_date, due_time, gcal_event_id').eq('id', body.taskId).eq('user_id', user.id).maybeSingle() as { data: Task | null };
         if (!task) return json({ error: 'Task non trovata' }, 404);
         const token = await accessToken(user.id);
         const { data: prim } = await db.from('calendars').select('calendar_id').eq('user_id', user.id).eq('is_primary', true).maybeSingle();
