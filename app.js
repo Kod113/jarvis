@@ -518,7 +518,7 @@ function trainingCardHtml(cls = '') {
 function bodyCardHtml(cls = 'span2') {
   const h = S.health || {};
   return `<button class="card tile-btn ${cls}" data-action="go" data-id="corpo">
-    <span class="card-label"><span>Corpo</span><span>${garminLinked() ? 'da Garmin · vedi settimana →' : 'Garmin da collegare'}</span></span>
+    <span class="card-label"><span>Corpo</span><span>${garminLinked() ? 'Vedi settimana →' : 'Garmin da collegare'}</span></span>
     <span class="stats3">
       <span><span class="stat-l">Sonno</span><span class="stat-v">${sleepLabel(h.sleep_minutes)}${h.sleep_score ? `<small> · ${h.sleep_score}</small>` : ''}</span></span>
       <span><span class="stat-l">FC riposo</span><span class="stat-v">${h.resting_hr ?? '—'}</span></span>
