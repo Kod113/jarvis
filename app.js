@@ -176,12 +176,14 @@ const ACT_LABEL = {
   cycling: 'Bici', indoor_cycling: 'Bici indoor', road_biking: 'Bici', strength_training: 'Forza', indoor_cardio: 'Cardio', hiit: 'HIIT',
   yoga: 'Yoga', pilates: 'Pilates', lap_swimming: 'Nuoto', open_water_swimming: 'Nuoto', breathwork: 'Respirazione', other: 'Allenamento'
 };
-const actLabel = (a) => ACT_LABEL[a.type] || (a.type ? a.type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : 'Allenamento');
+// Per David tutto ciò che non è corsa è un allenamento di forza.
+const actLabel = (a) => (RUN_TYPES_ALL().includes(a.type) ? (ACT_LABEL[a.type] || 'Corsa') : 'Forza');
+function RUN_TYPES_ALL() { return RUN_TYPES; }
 const RUN_TYPES = ['running', 'trail_running', 'treadmill_running', 'track_running', 'indoor_running', 'virtual_run'];
 const STRENGTH_TYPES = ['strength_training', 'weight_training'];
 function actIcon(a) {
   const run = RUN_TYPES.includes(a.type);
-  const str = STRENGTH_TYPES.includes(a.type);
+  const str = !run;
   const svg = run ? I.run : str ? I.barbell : I.heart;
   return `<span class="act-icon ${run ? 'run' : str ? 'str' : ''}" aria-label="${run ? 'Corsa' : str ? 'Forza' : 'Allenamento'}">${svg}</span>`;
 }
