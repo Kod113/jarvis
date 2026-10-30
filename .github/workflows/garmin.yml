@@ -2,8 +2,10 @@ name: Garmin → Jarvis
 
 on:
   schedule:
-    # Orari in UTC: circa 6:30, 9:30, 13:30, 19:30 e 23:30 a Roma (ora solare)
-    - cron: "30 5,8,12,18,22 * * *"
+    # Orari in UTC (Roma = UTC+1 d'inverno). Al mattino ogni ora, poi qualche passaggio nel resto della giornata.
+    # GitHub può ritardare o saltare i run programmati: per questo l'app avvia anche una sync su richiesta (garmin-refresh).
+    - cron: "17 4,5,6,7,8,9 * * *"
+    - cron: "17 12,16,20 * * *"
   workflow_dispatch:
     inputs:
       days:

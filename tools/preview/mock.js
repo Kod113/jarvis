@@ -60,6 +60,7 @@ export function createClient(){
   return {
     functions: {
       async invoke(name, { body }) {
+        if (name === 'garmin-refresh') return { data: { status: 'started' }, error: null };
         if (body.action === 'status') return { data: gstate, error: null };
         if (body.action === 'events') return { data: { events: gstate.connected ? events : [] }, error: null };
         if (body.action === 'syncTask') return { data: { eventId: 'ev-' + body.taskId }, error: null };

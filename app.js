@@ -49,6 +49,7 @@ const I = {
   run: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4.5" r="2"/><path d="M13.5 8 10.5 13l3.5 2.5-1 5"/><path d="M10.5 13 8 17H4.5"/><path d="m13.5 8 3.5 2.5 2.5-1.5"/><path d="M13.5 8 10 8.5 8 10.5"/></svg>',
   barbell: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h20"/><rect x="5" y="7" width="3" height="10" rx="1"/><rect x="16" y="7" width="3" height="10" rx="1"/><path d="M3.5 9.5v5M20.5 9.5v5"/></svg>',
   checkBig: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  refresh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></svg>',
   logout: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
   logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><g transform="skewX(-12) translate(10 0)"><path d="M56 16 H72 V56 A26 26 0 0 1 20 56 H36 A10 10 0 0 0 56 56 Z" fill="#FFFFFF"/></g><path d="M10 76 L90 32" stroke="var(--logo-bg, #2E5BDB)" stroke-width="6.5"/></svg>'
 };
@@ -117,6 +118,7 @@ const S = {
   expenses: [],
   health: null,
   healthDays: [],
+  garminSync: 'idle',
   activities: [],
   gcal: { configured: false, connected: false, calendars: [] },
   events: [],
@@ -195,6 +197,51 @@ const READY_IT = { PRIME: 'Ottima', HIGH: 'Alta', MODERATE: 'Moderata', LOW: 'Ba
 const HRV_IT = { BALANCED: 'Bilanciato', UNBALANCED: 'Sbilanciato', LOW: 'Basso', POOR: 'Scarso' };
 const activitiesOn = (day) => (S.activities || []).filter((a) => a.day === day);
 const garminLinked = () => (S.healthDays || []).length > 0 || (S.activities || []).length > 0;
+
+// Aggiornamento Garmin su richiesta: avvia la sync (funzione garmin-refresh → GitHub Actions) e attende i dati nuovi.
+let garminPoll = null;
+async function refreshGarmin(manual = false) {
+  if (S.garminSync === 'running') return;
+  const startedAt = Date.now();
+  ls.set('garminAuto', startedAt);
+  S.garminSync = 'running'; render();
+  let res;
+  try {
+    const { data, error } = await sb.functions.invoke('garmin-refresh', { body: { days: 2 } });
+    if (error) throw error;
+    res = data;
+  } catch (err) {
+    console.warn(err); S.garminSync = 'error'; render();
+    if (manual) toast('Aggiornamento Garmin non riuscito');
+    return;
+  }
+  if (res.status === 'not_configured') { S.garminSync = 'idle'; render(); if (manual) toast('Aggiornamento su richiesta non ancora attivo'); return; }
+  if (res.status === 'error') { S.garminSync = 'error'; render(); if (manual) toast('Aggiornamento Garmin non riuscito'); return; }
+  const before = S.health?.updated_at || '';
+  let tries = 0;
+  clearInterval(garminPoll);
+  garminPoll = setInterval(async () => {
+    tries++;
+    const { data } = await sb.from('health_daily').select('updated_at').eq('day', todayYmd()).maybeSingle();
+    const fresh = data && data.updated_at !== before && new Date(data.updated_at).getTime() > startedAt - 60000;
+    if (fresh || tries >= 16) {
+      clearInterval(garminPoll);
+      try { await loadAll(); } catch { /* offline */ }
+      S.garminSync = fresh ? 'done' : 'error';
+      render();
+      if (manual || fresh) toast(fresh ? 'Dati Garmin aggiornati' : 'Garmin non ha risposto, riprova tra poco');
+    }
+  }, 15000);
+}
+// Al mattino, se il sonno di stanotte non c'è ancora, aggiorna da solo (al massimo ogni 20 minuti).
+function maybeAutoRefreshGarmin() {
+  if (!garminLinked()) return;
+  const h = new Date().getHours();
+  if (h < 4 || h >= 14) return;
+  if (S.health?.sleep_minutes) return;
+  if (Date.now() - (ls.get('garminAuto', 0) || 0) < 20 * 60 * 1000) return;
+  refreshGarmin(false);
+}
 
 // ---------------------------------------------------------------- Google Calendar (Edge Function "gcal")
 async function gcal(action, payload = {}) {
@@ -517,17 +564,28 @@ function trainingCardHtml(cls = '') {
 
 function bodyCardHtml(cls = 'span2') {
   const h = S.health || {};
-  return `<button class="card tile-btn ${cls}" data-action="go" data-id="corpo">
-    <span class="card-label"><span>Corpo</span><span>${garminLinked() ? 'Vedi settimana →' : 'Garmin da collegare'}</span></span>
-    <span class="stats3">
+  const running = S.garminSync === 'running';
+  const missingSleep = garminLinked() && !h.sleep_minutes && new Date().getHours() >= 4;
+  const note = running ? 'Aggiorno i dati del Garmin…'
+    : missingSleep && S.garminSync === 'done' ? 'Il sonno di stanotte non è ancora su Garmin: apri Garmin Connect per sincronizzare l\'orologio, poi aggiorna.'
+    : missingSleep ? 'Il sonno di stanotte non è ancora arrivato.' : '';
+  return `<div class="card ${cls}">
+    <div class="card-label"><span>Corpo</span>
+      <span class="card-actions">
+        ${garminLinked() ? `<button class="mini-btn ${running ? 'spin' : ''}" data-action="garminRefresh" aria-label="Aggiorna dati Garmin" ${running ? 'disabled' : ''}>${I.refresh}</button>
+        <button class="link" data-action="go" data-id="corpo">Vedi settimana →</button>` : '<span>Garmin da collegare</span>'}
+      </span>
+    </div>
+    <button class="stats3 tile-btn plain" data-action="go" data-id="corpo" aria-label="Apri la sezione Corpo">
       <span><span class="stat-l">Sonno</span><span class="stat-v">${sleepLabel(h.sleep_minutes)}${h.sleep_score ? `<small> · ${h.sleep_score}</small>` : ''}</span></span>
       <span><span class="stat-l">FC riposo</span><span class="stat-v">${h.resting_hr ?? '—'}</span></span>
       <span><span class="stat-l">HRV</span><span class="stat-v">${h.hrv ?? '—'}</span></span>
       <span><span class="stat-l">Body Battery</span><span class="stat-v">${h.body_battery_wake ?? h.body_battery_high ?? '—'}</span></span>
       <span><span class="stat-l">Prontezza</span><span class="stat-v">${h.readiness ?? '—'}</span></span>
       <span><span class="stat-l">Passi</span><span class="stat-v">${h.steps != null ? h.steps.toLocaleString('it-IT') : '—'}</span></span>
-    </span>
-  </button>`;
+    </button>
+    ${note ? `<p class="sync-note">${note}</p>` : ''}
+  </div>`;
 }
 
 // Grafico a barre semplice per 7 giorni.
@@ -1011,6 +1069,7 @@ const actions = {
     if (n > 0) { ls.set('budget', n); render(); }
   },
   mFilter(id) { S.ui.mFilter = id; render(); },
+  garminRefresh() { refreshGarmin(true); },
   corpoWeek(id) { S.ui.corpoWeek = Math.min(0, (S.ui.corpoWeek || 0) + Number(id)); render(); },
   async logout() { await sb.auth.signOut(); },
   async signup() {
@@ -1094,6 +1153,7 @@ async function onSession(session) {
   S.loading = false;
   render();
   if (session) {
+    maybeAutoRefreshGarmin();
     await loadGcal();
     render();
     const g = new URLSearchParams(location.search).get('google');
@@ -1112,7 +1172,7 @@ document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !S.session) return;
   applyTheme();
   if (todayYmd() !== lastDay) { lastDay = todayYmd(); S.ui.weekSel = lastDay; S.ui.calSel = lastDay; }
-  try { await loadAll(); await loadEvents(true); render(); } catch { /* offline */ }
+  try { await loadAll(); await loadEvents(true); render(); maybeAutoRefreshGarmin(); } catch { /* offline */ }
 });
 
 sb.auth.onAuthStateChange((event, session) => {

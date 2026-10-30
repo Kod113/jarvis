@@ -21,6 +21,9 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   segreto `JARVIS_INGEST_TOKEN`). Tabelle `health_daily` (sonno, FC, HRV, Body Battery, prontezza, passi) e `activities`.
   Segreti GitHub: `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `JARVIS_INGEST_TOKEN`. Token Garmin in cache cifrati (repo pubblico: mai stampare dati).
   Per rilanciare la sync senza token gh: aggiorna `tools/garmin/LAST_TRIGGER` e fai push.
+  Sync su richiesta: funzione `garmin-refresh` (verify_jwt false, solo il proprietario) avvia `workflow_dispatch` con il segreto Supabase
+  `JARVIS_GITHUB_TOKEN` (PAT fine-grained, Actions read/write sul solo repo). L'app la chiama da sola al mattino (4–14) se manca il sonno
+  di oggi (max ogni 20 min) e con il pulsante ↻ nella scheda Corpo. I cron di GitHub possono ritardare di ore: non fidarsi solo di quelli.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.
