@@ -476,3 +476,10 @@ button.tb-chip { border: 0; color: var(--ink); font: inherit; font-size: 12px; c
 .ev-f .field { width: 100%; box-sizing: border-box; }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes sheet-in { from { opacity: 0; transform: translate(-50%, 24px); } }
+
+/* Valutazioni Corpo */
+.insights { gap: 14px; }
+.ins-block { display: flex; flex-direction: column; gap: 6px; }
+.ins-h { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--accent); }
+.ins-l { margin: 0; font-size: 14px; line-height: 1.45; padding-left: 12px; border-left: 2px solid var(--line); }
+.ins-foot { margin: 0; font-size: 11px; color: var(--muted); }

@@ -54,6 +54,10 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   con pressione prolungata. Gli eventi si ricaricano ogni minuto e al ritorno nell'app (modifiche fatte su Google).
 - Layout Bento su telefono (barra in basso: Oggi · Settimana · Spese · Mente), su computer barra laterale + Calendario a pagina intera (≥1000px).
 - Icona: J corsiva bianca tagliata (stile "J1") su blu di giorno, su grafite di sera.
+- Corpo: scheda "Valutazioni" sotto i grafici (`insightsHtml`, tutto calcolato nel browser): Oggi (scostamenti dalla media 30 gg con cause probabili:
+  allenamento di ieri coerente o no con la prontezza, sonno), settimana vs precedente, pattern nel tempo (dopo allenamento/riposo, intensi vs leggeri,
+  sonno → Body Battery/prontezza, corsa vs forza, giorno della settimana, tendenza 2 settimane). L'app carica 365 giorni di health_daily/activities.
+  Storico Garmin: per recuperarne di più avvia il workflow con input `days` (es. 180).
 - Allenamenti: corsa = icona omino (azzurro), tutto il resto = "Forza" con icona bilanciere (scelta di David).
 - Barra in basso (telefono): pillola arrotondata come la cattura, indicatore che scivola (`--i`), si può trascinare col dito tra le sezioni;
   la sezione entra con un'animazione laterale. Con la tastiera aperta la cattura sale sopra la tastiera (`visualViewport`, classe `kb-open`);

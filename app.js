@@ -206,8 +206,9 @@ async function loadAll() {
     sb.from('tasks').select('*').or(`done.eq.false,done_at.gte.${sinceIso},due_date.gte.${sinceDay}`).order('created_at').limit(2000),
     sb.from('captures').select('*').in('status', ['inbox', 'archived']).order('created_at', { ascending: false }).limit(1000),
     sb.from('expenses').select('*').gte('spent_at', sinceIso).order('spent_at', { ascending: false }).limit(2000),
-    sb.from('health_daily').select('*').gte('day', sinceDay).order('day', { ascending: false }).limit(120),
-    sb.from('activities').select('*').gte('day', sinceDay).order('start_time', { ascending: false }).limit(500)
+    // Corpo: un anno di storico per trovare i pattern nel tempo.
+    sb.from('health_daily').select('*').gte('day', ymd(addDays(new Date(), -365))).order('day', { ascending: false }).limit(400),
+    sb.from('activities').select('*').gte('day', ymd(addDays(new Date(), -365))).order('start_time', { ascending: false }).limit(1500)
   ]);
   for (const r of [t, c, e]) if (r.error) throw r.error;
   S.tasks = t.data || [];
@@ -739,6 +740,151 @@ function barsHtml(title, days, key, fmt, note = '') {
   </div>`;
 }
 
+// ---------------------------------------------------------------- Valutazioni Corpo
+// Tutto calcolato sul dispositivo dai dati Garmin: confronto con la propria media e pattern nel tempo.
+// Sono correlazioni, non diagnosi: le frasi usano "probabilmente", "di solito".
+const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
+const quant = (a, q) => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
+const r0 = (v) => Math.round(v);
+const hm = (m) => sleepLabel(Math.round(m));
+const sgn = (v, unit = '') => `${v > 0 ? '+' : '−'}${Math.abs(Math.round(v))}${unit}`;
+function bodyModel() {
+  const H = new Map((S.healthDays || []).map((h) => [h.day, h]));
+  const A = new Map();
+  (S.activities || []).forEach((a) => {
+    const x = A.get(a.day) || { load: 0, dur: 0, n: 0, run: 0 };
+    x.load += Number(a.training_load || 0); x.dur += a.duration_s || 0; x.n++; if (RUN_TYPES.includes(a.type)) x.run++;
+    A.set(a.day, x);
+  });
+  const loads = [...A.values()].map((x) => x.load).filter((v) => v > 0);
+  return { H, A, p25: quant(loads, 0.25) ?? 30, p75: quant(loads, 0.75) ?? 80, prev: (d) => ymd(addDays(parseYmd(d), -1)) };
+}
+const intensity = (M, x) => (!x ? 'riposo' : x.load >= M.p75 ? 'intenso' : x.load <= M.p25 ? 'leggero' : 'moderato');
+// Allenamento coerente con la prontezza del giorno: intenso solo con prontezza alta, leggero o riposo con prontezza bassa.
+function coherent(M, x, readiness) {
+  if (readiness == null) return null;
+  const k = intensity(M, x);
+  if (readiness >= 70) return true;
+  if (readiness >= 50) return k !== 'intenso';
+  return k === 'riposo' || k === 'leggero';
+}
+function baseline(M, day, key, n = 30) {
+  const v = []; for (let i = 1; i <= n; i++) { const h = M.H.get(ymd(addDays(parseYmd(day), -i))); if (h && h[key] != null) v.push(Number(h[key])); }
+  return v.length >= 5 ? avg(v) : null;
+}
+// Lettura del giorno: cosa si discosta dalla tua media e perché, probabilmente.
+function dayReading(M, day) {
+  const h = M.H.get(day); if (!h) return null;
+  const y = M.prev(day), yx = M.A.get(y), yh = M.H.get(y);
+  const out = [];
+  const d = (key) => { const b = baseline(M, day, key); return b != null && h[key] != null ? { v: Number(h[key]), b, diff: Number(h[key]) - b } : null; };
+  const hrv = d('hrv'), rhr = d('resting_hr'), sl = d('sleep_minutes'), bb = d('body_battery_wake'), rd = d('readiness');
+  const causes = (good) => {
+    const c = [];
+    const k = intensity(M, yx);
+    const coh = coherent(M, yx, yh?.readiness);
+    if (k === 'riposo') { if (good) c.push('ieri ti sei riposato'); }
+    else if (coh === true) c.push(good ? `ieri hai fatto un allenamento ${k} coerente con la tua prontezza (${yh.readiness})` : `ieri hai fatto un allenamento ${k}, anche se adatto alla prontezza (${yh.readiness})`);
+    else if (coh === false) c.push(`ieri l'allenamento ${k} era più impegnativo di quanto suggeriva la prontezza (${yh.readiness})`);
+    else c.push(`ieri hai fatto un allenamento ${k}`);
+    if (sl && Math.abs(sl.diff) >= 20 && (sl.diff > 0) === good) c.push(`stanotte hai dormito ${hm(sl.v)}, ${sl.diff > 0 ? 'più' : 'meno'} del solito (${hm(sl.b)})`);
+    return c;
+  };
+  if (hrv && Math.abs(hrv.diff) >= Math.max(3, hrv.b * 0.06)) {
+    const good = hrv.diff > 0;
+    const c = causes(good);
+    const head = `HRV ${r0(hrv.v)} ms, ${good ? 'sopra' : 'sotto'} la tua media di 30 giorni (${r0(hrv.b)}).`;
+    out.push(c.length ? `${head} Probabilmente ${good ? 'aiuta' : 'pesa'} che ${c.join(' e ')}.`
+      : `${head} ${good ? '' : 'Ieri eri a riposo e il sonno è nella norma: il calo viene probabilmente da altro (stress, cena tardi, alcol, un po\u2019 di malessere).'}`.trim());
+  }
+  if (rhr && Math.abs(rhr.diff) >= 2) out.push(`FC a riposo ${r0(rhr.v)}, ${sgn(rhr.diff)} rispetto alla media${rhr.diff > 0 ? ': spesso succede dopo poco sonno, un allenamento duro o un po’ di stanchezza' : ': buon segno di recupero'}.`);
+  if (!hrv && sl && Math.abs(sl.diff) >= 30) out.push(`Hai dormito ${hm(sl.v)}, ${sgn(sl.diff, "'")} rispetto alla tua media.`);
+  if (rd && h.readiness != null) {
+    const k = h.readiness >= 70 ? 'Prontezza alta: oggi va bene anche un allenamento intenso.' : h.readiness >= 50 ? 'Prontezza media: meglio un allenamento moderato.' : 'Prontezza bassa: oggi meglio riposo o qualcosa di leggero.';
+    out.push(k);
+  }
+  return out;
+}
+// Pattern nel tempo: confronti tra gruppi di giorni, mostrati solo con abbastanza dati e una differenza sensata.
+function bodyPatterns(M) {
+  const days = [...M.H.keys()].sort();
+  const pat = [];
+  const pair = (label, a, b, key, min, fmt, text) => {
+    const va = a.map((d) => M.H.get(d)?.[key]).filter((v) => v != null).map(Number);
+    const vb = b.map((d) => M.H.get(d)?.[key]).filter((v) => v != null).map(Number);
+    if (va.length < 4 || vb.length < 4) return;
+    const ma = avg(va), mb = avg(vb);
+    if (Math.abs(ma - mb) < min) return;
+    pat.push({ w: Math.abs(ma - mb) / min, t: text(ma, mb, fmt), n: va.length + vb.length });
+  };
+  // 1. Giorno dopo allenamento vs giorno dopo riposo
+  const afterT = days.filter((d) => M.A.get(M.prev(d))), afterR = days.filter((d) => !M.A.get(M.prev(d)) && M.H.has(M.prev(d)));
+  pair('hrv', afterT, afterR, 'hrv', 3, r0, (a, b) => `Il giorno dopo un allenamento la tua HRV è di solito ${a > b ? 'più alta' : 'più bassa'} (${r0(a)} contro ${r0(b)} dopo un giorno di riposo).`);
+  pair('rd', afterT, afterR, 'readiness', 5, r0, (a, b) => `Dopo un giorno di allenamento la prontezza del mattino è in media ${r0(a)}, dopo un riposo ${r0(b)}.`);
+  // 2. Allenamenti intensi vs leggeri
+  const hard = days.filter((d) => intensity(M, M.A.get(M.prev(d))) === 'intenso'), easy = days.filter((d) => ['leggero', 'moderato'].includes(intensity(M, M.A.get(M.prev(d)))));
+  pair('hrvh', hard, easy, 'hrv', 3, r0, (a, b) => `Dopo gli allenamenti intensi l'HRV del giorno dopo è ${a < b ? 'più bassa' : 'più alta'} che dopo quelli leggeri o moderati (${r0(a)} contro ${r0(b)}).`);
+  // 3. Sonno e prontezza / Body Battery
+  const sm = quant(days.map((d) => M.H.get(d)?.sleep_minutes).filter((v) => v != null), 0.5);
+  if (sm) {
+    const thr = Math.max(420, sm); // almeno 7 ore
+    const lots = days.filter((d) => (M.H.get(d)?.sleep_minutes ?? -1) >= thr), few = days.filter((d) => { const v = M.H.get(d)?.sleep_minutes; return v != null && v < thr; });
+    pair('bb', lots, few, 'body_battery_wake', 6, r0, (a, b) => `Quando dormi almeno ${hm(thr)} ti svegli con Body Battery ${r0(a)}, contro ${r0(b)} nelle notti più corte.`);
+    pair('rds', lots, few, 'readiness', 6, r0, (a, b) => `Con almeno ${hm(thr)} di sonno la prontezza del mattino è in media ${r0(a)}, con meno ${r0(b)}.`);
+  }
+  // 4. Allenarsi con prontezza bassa
+  const lowT = days.filter((d) => { const x = M.A.get(M.prev(d)), r = M.H.get(M.prev(d))?.readiness; return x && r != null && r < 50; });
+  const okT = days.filter((d) => { const x = M.A.get(M.prev(d)), r = M.H.get(M.prev(d))?.readiness; return x && r != null && r >= 50; });
+  pair('low', lowT, okT, 'readiness', 6, r0, (a, b) => `Quando ti alleni con prontezza sotto 50, il giorno dopo la prontezza resta ${a < b ? 'più bassa' : 'simile'} (${r0(a)} contro ${r0(b)}): in quei giorni conviene andare leggero.`);
+  // 5. Corsa vs forza
+  const runD = days.filter((d) => M.A.get(M.prev(d))?.run), strD = days.filter((d) => { const x = M.A.get(M.prev(d)); return x && !x.run; });
+  pair('rs', runD, strD, 'hrv', 3, r0, (a, b) => `Il giorno dopo una corsa l'HRV è ${a > b ? 'più alta' : 'più bassa'} che dopo un allenamento di forza (${r0(a)} contro ${r0(b)}).`);
+  // 6. Giorno della settimana con meno sonno (turni)
+  const byDow = DOW.map((_, i) => days.filter((d) => dowIdx(parseYmd(d)) === i).map((d) => M.H.get(d)?.sleep_minutes).filter((v) => v != null));
+  const dm = byDow.map((v) => (v.length >= 3 ? avg(v) : null));
+  const valid = dm.filter((v) => v != null);
+  if (valid.length >= 5) {
+    const lo = Math.min(...valid), hi = Math.max(...valid);
+    if (hi - lo >= 40) {
+      const li = dm.indexOf(lo), longD = ['lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica'];
+      pat.push({ w: (hi - lo) / 40, t: `La notte prima del ${longD[li]} dormi di solito meno: ${hm(lo)} contro ${hm(hi)} nel giorno migliore. Potrebbe dipendere dai turni.`, n: byDow[li].length });
+    }
+  }
+  // 7. Andamento: ultime 2 settimane contro le 2 precedenti
+  const recent = days.slice(-14), before = days.slice(-28, -14);
+  pair('trh', recent, before, 'hrv', 3, r0, (a, b) => `Tendenza: nelle ultime 2 settimane l'HRV media è ${a > b ? 'salita' : 'scesa'} (${r0(b)} → ${r0(a)}).`);
+  pair('trr', recent, before, 'resting_hr', 2, r0, (a, b) => `Tendenza: la FC a riposo è ${a < b ? 'scesa' : 'salita'} nelle ultime 2 settimane (${r0(b)} → ${r0(a)})${a < b ? ', segno di forma in miglioramento' : ''}.`);
+  return { list: pat.sort((x, y) => y.w - x.w).slice(0, 5), days: days.length };
+}
+// Riepilogo della settimana mostrata, rispetto alla precedente.
+function weekReading(M, mon) {
+  const ids = [0, 1, 2, 3, 4, 5, 6].map((i) => ymd(addDays(mon, i)));
+  const prev = ids.map((d) => ymd(addDays(parseYmd(d), -7)));
+  const m = (list, key) => avg(list.map((d) => M.H.get(d)?.[key]).filter((v) => v != null).map(Number));
+  const out = [];
+  const sl = m(ids, 'sleep_minutes'), slp = m(prev, 'sleep_minutes');
+  if (sl != null) out.push(`Sonno medio ${hm(sl)}${slp != null && Math.abs(sl - slp) >= 15 ? ` (${sgn(sl - slp, "'")} rispetto alla settimana prima)` : ''}.`);
+  const hv = m(ids, 'hrv'), hvp = m(prev, 'hrv');
+  if (hv != null && hvp != null && Math.abs(hv - hvp) >= 2) out.push(`HRV media ${r0(hv)} ms, ${hv > hvp ? 'in salita' : 'in calo'} rispetto a ${r0(hvp)}.`);
+  const tr = ids.filter((d) => M.A.get(d)), incoh = tr.filter((d) => coherent(M, M.A.get(d), M.H.get(d)?.readiness) === false);
+  if (tr.length) out.push(incoh.length ? `${incoh.length} allenament${incoh.length === 1 ? 'o' : 'i'} su ${tr.length} più dur${incoh.length === 1 ? 'o' : 'i'} di quanto suggeriva la prontezza del giorno.` : `Tutti gli allenamenti (${tr.length}) erano coerenti con la prontezza del giorno.`);
+  return out;
+}
+function insightsHtml(mon, isCurrent) {
+  const M = bodyModel();
+  const today = isCurrent ? dayReading(M, todayYmd()) : null;
+  const week = weekReading(M, mon);
+  const P = bodyPatterns(M);
+  const block = (title, lines) => (lines && lines.length ? `<div class="ins-block"><p class="ins-h">${title}</p>${lines.map((l) => `<p class="ins-l">${esc(l)}</p>`).join('')}</div>` : '');
+  return `<div class="card insights">
+    <p class="card-label"><span>Valutazioni</span><span>dai tuoi dati Garmin</span></p>
+    ${block('Oggi', today)}
+    ${block(isCurrent ? 'Questa settimana' : 'Quella settimana', week)}
+    ${P.list.length ? block('Pattern nel tempo', P.list.map((x) => x.t)) : `<div class="ins-block"><p class="ins-h">Pattern nel tempo</p><p class="ins-l muted">${P.days < 45 ? `Per trovare pattern affidabili servono più giorni di dati (ora ${P.days}). Compariranno qui man mano.` : 'Nessun pattern netto per ora: i tuoi valori restano simili tra un tipo di giornata e l\u2019altro.'}</p></div>`}
+    <p class="ins-foot">Correlazioni dai tuoi numeri, non diagnosi.</p>
+  </div>`;
+}
+
 function viewCorpo() {
   const off = S.ui.corpoWeek || 0;
   const mon = addDays(mondayOf(new Date()), off * 7);
@@ -782,7 +928,8 @@ function viewCorpo() {
     ${barsHtml('FC a riposo', days, 'resting_hr', (v) => String(v))}
     ${barsHtml('HRV notturna', days, 'hrv', (v) => String(v), hrvNote)}
     ${barsHtml('Body Battery al risveglio', days, 'body_battery_wake', (v) => String(v))}
-  </div>`;
+  </div>
+  ${insightsHtml(mon, off === 0)}`;
 }
 
 function nextCardHtml() {
