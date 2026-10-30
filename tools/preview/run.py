@@ -39,7 +39,7 @@ with sync_playwright() as p:
         for v in ['settimana','spese','mente'] + (['calendario'] if name=='desktop' else []):
             pg.click(f'[data-action="go"][data-id="{v}"] >> visible=true'); pg.wait_for_timeout(150)
             if v=='spese':
-                pg.click('[data-action="addExpense"]'); pg.fill('#exAmount','24,90'); pg.fill('#exDesc','Amazon · libro'); pg.click('[data-action="exCat"][data-id="Tech"]'); pg.click('[data-action="saveExpense"]'); pg.wait_for_timeout(150)
+                pg.click('[data-action="addExpense"]'); pg.fill('#exAmount','24,90'); pg.fill('#exDesc','Amazon · libro'); pg.click('[data-action="exCat"][data-id="Shopping"]'); pg.click('[data-action="saveExpense"]'); pg.wait_for_timeout(150)
             if v=='settimana':
                 pg.click('[data-action="planCapture"] >> nth=0'); pg.wait_for_timeout(150)
             pg.screenshot(path=f'{out}/{name}-{v}.png', full_page=True)
