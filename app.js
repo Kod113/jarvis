@@ -16,8 +16,9 @@ const LAT = 41.9028, LON = 12.4964;
 const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti', 'Salute', 'Esperienze', 'Fun', 'Cinema', 'Formazione',
   'Università', 'Regali', 'Home', 'Lavanderia', 'Burocrazie', 'Svapo', 'Yugi', 'Giorgia', 'Investimenti'];
 // Tetto mensile per categoria (mese finanziario 27→26): 50 € per tutte, tranne queste.
-const CAT_CAP = { Benza: 130, Spesa: 70, Cibo: 130 };
-const capOf = (c) => CAT_CAP[c] ?? 50;
+// Investimenti senza tetto (null).
+const CAT_CAP = { Benza: 130, Spesa: 70, Cibo: 130, Investimenti: null };
+const capOf = (c) => (c in CAT_CAP ? CAT_CAP[c] : 50);
 const KINDS = [
   { id: 'task', label: 'Task' },
   { id: 'frase', label: 'Frase' },
@@ -1121,7 +1122,9 @@ function viewSpese() {
   <div class="card">
     <p class="card-label"><span>Per categoria</span></p>
     ${cats.length ? cats.map(([c, v]) => {
-      const cap = capOf(c), r = v / cap;
+      const cap = capOf(c);
+      if (cap == null) return `<div class="cat-row"><div class="cat-top"><span>${esc(c)}</span><span class="mono"><b>€${eur(v)}</b></span></div></div>`;
+      const r = v / cap;
       const st = r > 1 ? 'over' : r >= 0.8 ? 'near' : '';
       const note = r > 1 ? `Sforato di €${eur(v - cap)}` : `Restano €${eur(cap - v)}`;
       return `<div class="cat-row ${st}"><div class="cat-top"><span>${esc(c)}</span><span class="mono"><b>€${eur(v)}</b> <span class="muted">/ €${cap}</span></span></div><div class="cat-bar"><div style="width:${Math.min(100, Math.round(r * 100))}%"></div></div>${isCurrent || r > 1 ? `<span class="cat-note">${note}</span>` : ''}</div>`;
