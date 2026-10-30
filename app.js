@@ -477,9 +477,9 @@ function taskWhen(x) {
 function headHtml(date, title, extra = '') {
   if (isWide()) return `<div class="head wide">
     <div><p class="h-date">${esc(date)}</p><h1 class="h-title">${esc(title)}</h1></div>
-    ${extra}${captureHtml()}
+    ${extra}${captureHtml()}${themeBtnHtml()}
   </div>`;
-  // Telefono: sole/luna in alto a destra, in ogni sezione.
+  // Sole/luna sempre per primo in alto a destra, in ogni sezione (sopra gli altri pulsanti).
   return `<div class="head">
     <div><p class="h-date">${esc(date)}</p><h1 class="h-title">${esc(title)}</h1></div>
     <div class="h-side">${themeBtnHtml()}${extra}</div>
@@ -525,7 +525,6 @@ function navHtml() {
     <div class="logo">${I.logo}</div>
     ${items.map((i) => `<button class="${S.view === i.id ? 'on' : ''}" data-action="go" data-id="${i.id}">${i.icon}${i.label}</button>`).join('')}
     <div class="spacer"></div>
-    ${themeBtnHtml('rail-theme')}
     <button data-action="logout" aria-label="Esci">${I.logout}Esci</button>
   </nav>
   <nav class="nav-bottom" aria-label="Sezioni" style="--i:${navPrevIdx < 0 ? BOTTOM.indexOf(bottomView) : navPrevIdx}">

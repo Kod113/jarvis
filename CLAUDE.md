@@ -43,7 +43,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 
 ## Stile
 - Palette "Grafite e blu", token CSS in `:root` e `:root[data-theme="dark"]`. Tema scuro automatico da tramonto ad alba (Roma), `applyTheme()`.
-  Pulsante sole/luna (`themeBtnHtml`, azione `toggleTheme`): in alto a destra su telefono, nella barra laterale su computer; forza il tema
+  Pulsante sole/luna (`themeBtnHtml`, azione `toggleTheme`): sempre per primo in alto a destra (telefono e computer); forza il tema
   fino al prossimo tramonto/alba (`themeOverride` in localStorage), transizione a cerchio con View Transitions.
 - Layout Bento su telefono (barra in basso: Oggi · Settimana · Spese · Mente), su computer barra laterale + Calendario a pagina intera (≥1000px).
 - Icona: J corsiva bianca tagliata (stile "J1") su blu di giorno, su grafite di sera.
