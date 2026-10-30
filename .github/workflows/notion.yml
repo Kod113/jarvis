@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "47 5,17 * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["tools/notion/LAST_TRIGGER", ".github/workflows/notion.yml"]
 
 jobs:
   sync:

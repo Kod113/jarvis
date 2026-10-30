@@ -29,7 +29,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   database inline "<Mese> <anno>" (Motivo title, Date, euro: negativo = uscita, Category multi_select). Mese finanziario dal 27 al 26, chiamato col
   mese in cui finisce (`expenses.month_key` 'YYYY-MM', trigger `financial_month`). La sync crea il database del mese se manca, invia le spese Jarvis
   (`source='jarvis'`, `notion_page_id` null), importa/aggiorna mese corrente e precedente e lo storico (`notion_months.imported_at`).
-  Righe cancellate su Notion spariscono da Jarvis. Workflow `.github/workflows/notion.yml` 2 volte al giorno; l'app sincronizza aprendo Spese.
+  Righe cancellate su Notion spariscono da Jarvis. Per lanciarla senza token gh: aggiorna `tools/notion/LAST_TRIGGER` e fai push. Workflow `.github/workflows/notion.yml` 2 volte al giorno; l'app sincronizza aprendo Spese.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.
