@@ -302,7 +302,12 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 .cat-row { display: flex; flex-direction: column; gap: 6px; }
 .cat-top { display: flex; justify-content: space-between; font-size: 14px; }
 .cat-bar { height: 6px; border-radius: 3px; background: var(--line-2); }
-.cat-bar > div { height: 100%; border-radius: 3px; background: var(--accent); }
+.cat-bar > div { height: 100%; border-radius: 3px; background: var(--accent); transition: width .5s cubic-bezier(.2,.8,.2,1); }
+.cat-top b { font-weight: 500; }
+.cat-note { font-size: 12px; color: var(--muted); }
+.cat-row.near .cat-bar > div { background: #e0a43a; }
+.cat-row.over .cat-bar > div { background: #e5484d; }
+.cat-row.over .cat-note, .cat-row.over .cat-top b { color: #e5484d; }
 .mv-icon { width: 32px; height: 32px; flex: none; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--line-2); color: var(--muted); }
 .mv-icon.nfc { background: var(--soft); color: var(--accent); }
 .field { min-height: 44px; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; background: var(--card); font-size: 16px; min-width: 0; }
@@ -419,3 +424,12 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 /* Niente zoom su telefono: niente doppio tocco per ingrandire, e campi a 16px (sotto, iOS ingrandisce quando li tocchi). */
 html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 @media (max-width: 999px) { input, textarea, select { font-size: 16px !important; } }
+
+/* Nuova task: scivola dentro dall'alto, il cerchio fa un piccolo "pop" e la riga si illumina di blu. */
+.task.is-new { animation: task-in .55s cubic-bezier(.2, .9, .25, 1.15) both; border-radius: 12px; }
+.task.is-new .task-line { animation: task-glow 1s ease-out both; border-radius: 12px; }
+.task.is-new .check { animation: task-pop .6s .15s cubic-bezier(.3, 1.6, .5, 1) both; }
+@keyframes task-in { from { opacity: 0; transform: translateY(-14px) scale(.96); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes task-glow { 0% { background: color-mix(in srgb, var(--accent) 18%, transparent); } 100% { background: transparent; } }
+@keyframes task-pop { 0% { transform: scale(.4); border-color: var(--accent); } 60% { transform: scale(1.18); border-color: var(--accent); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .task.is-new, .task.is-new .task-line, .task.is-new .check { animation: none; } }

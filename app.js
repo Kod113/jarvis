@@ -15,6 +15,9 @@ const LAT = 41.9028, LON = 12.4964;
 // Stesse categorie dei database spese su Notion.
 const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti', 'Salute', 'Esperienze', 'Fun', 'Cinema', 'Formazione',
   'Università', 'Regali', 'Home', 'Lavanderia', 'Burocrazie', 'Svapo', 'Yugi', 'Giorgia', 'Investimenti'];
+// Tetto mensile per categoria (mese finanziario 27→26): 50 € per tutte, tranne queste.
+const CAT_CAP = { Benza: 130, Spesa: 70, Cibo: 130 };
+const capOf = (c) => CAT_CAP[c] ?? 50;
 const KINDS = [
   { id: 'task', label: 'Task' },
   { id: 'frase', label: 'Frase' },
@@ -331,7 +334,14 @@ async function addTask(title, extra = {}) {
   const { data, error } = await sb.from('tasks').insert(row).select().single();
   if (error) throw error;
   S.tasks.push(data);
+  markNewTask(data.id);
   return data;
+}
+// La task appena aggiunta entra con un'animazione (una sola volta, anche se nel frattempo si ridisegna).
+let newTaskId = null, newTaskTimer = null;
+function markNewTask(id) {
+  newTaskId = id; clearTimeout(newTaskTimer);
+  newTaskTimer = setTimeout(() => { newTaskId = null; document.querySelectorAll('.task.is-new').forEach((el) => el.classList.remove('is-new')); }, 1100);
 }
 async function updateTask(id, patch) {
   const t = S.tasks.find((x) => x.id === id);
@@ -545,7 +555,7 @@ function taskRowHtml(x) {
   const open = S.ui.schedId === x.id;
   const clockCls = open ? 'open' : (x.due_time || moved ? 'set' : '');
   const editing = S.ui.editId === x.id;
-  return `<div class="task ${x.done ? 'done' : ''} ${moved ? 'moved' : ''}">
+  return `<div class="task ${x.done ? 'done' : ''} ${moved ? 'moved' : ''} ${x.id === newTaskId ? 'is-new' : ''}">
     <div class="task-line">
       <button class="check-btn" data-action="toggleTask" data-id="${x.id}" aria-pressed="${x.done}" aria-label="${x.done ? 'Segna da fare' : 'Segna fatta'}: ${esc(x.title)}"><span class="check">${x.done ? I.check : ''}</span></button>
       <span class="task-text">
@@ -1072,7 +1082,6 @@ function viewSpese() {
   const byCat = {};
   outs.forEach((e) => { byCat[e.category] = (byCat[e.category] || 0) + Number(e.amount); });
   const cats = Object.entries(byCat).sort((a, c) => c[1] - a[1]);
-  const max = cats.length ? cats[0][1] : 1;
   const icon = (e) => {
     const cat = e.direction === 'in' ? 'Entrate' : e.category;
     const tint = e.direction === 'in' ? ' in' : e.method === 'nfc' ? ' nfc' : '';
@@ -1111,7 +1120,12 @@ function viewSpese() {
   </div>
   <div class="card">
     <p class="card-label"><span>Per categoria</span></p>
-    ${cats.length ? cats.map(([c, v]) => `<div class="cat-row"><div class="cat-top"><span>${esc(c)}</span><span class="mono muted">€${eur(v)}</span></div><div class="cat-bar"><div style="width:${Math.round((v / max) * 100)}%"></div></div></div>`).join('') : '<p class="empty">Ancora nessuna spesa in questo mese.</p>'}
+    ${cats.length ? cats.map(([c, v]) => {
+      const cap = capOf(c), r = v / cap;
+      const st = r > 1 ? 'over' : r >= 0.8 ? 'near' : '';
+      const note = r > 1 ? `Sforato di €${eur(v - cap)}` : `Restano €${eur(cap - v)}`;
+      return `<div class="cat-row ${st}"><div class="cat-top"><span>${esc(c)}</span><span class="mono"><b>€${eur(v)}</b> <span class="muted">/ €${cap}</span></span></div><div class="cat-bar"><div style="width:${Math.min(100, Math.round(r * 100))}%"></div></div>${isCurrent || r > 1 ? `<span class="cat-note">${note}</span>` : ''}</div>`;
+    }).join('') : '<p class="empty">Ancora nessuna spesa in questo mese.</p>'}
   </div>
   <div class="card">
     <p class="card-label"><span>Movimenti</span><span>${all.length}</span></p>
