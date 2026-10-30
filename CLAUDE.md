@@ -30,6 +30,10 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   mese in cui finisce (`expenses.month_key` 'YYYY-MM', trigger `financial_month`). La sync crea il database del mese se manca, invia le spese Jarvis
   (`source='jarvis'`, `notion_page_id` null), importa/aggiorna mese corrente e precedente e lo storico (`notion_months.imported_at`).
   Righe cancellate su Notion spariscono da Jarvis. Per lanciarla senza token gh: aggiorna `tools/notion/LAST_TRIGGER` e fai push. Workflow `.github/workflows/notion.yml` 2 volte al giorno; l'app sincronizza aprendo Spese.
+- Spese da iPhone: funzione `expense-ingest` (verify_jwt false, header `x-jarvis-token`; i token stanno in `device_tokens` solo come sha256,
+  creati dall'app con RPC `create_device_token` nella scheda "Spese dall'iPhone" in Spese). Body: amount (accetta "€3,20"), merchant,
+  description, category, method (nfc/manual/online). Dopo l'inserimento chiama `notion-sync`. Due Comandi Rapidi costruiti a mano da David:
+  automazione Wallet "Transazione" (Per cosa? → Categoria?) e scorciatoia "Spesa" (Quanto? → Per cosa? → Categoria?).
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.
@@ -49,7 +53,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 4. Rispondi a David con una riga su cosa è cambiato.
 
 ## Idee/roadmap (chieste da David)
-- Comandi Rapidi iOS: automazione Wallet (pagamento NFC → nome, categoria, importo) e "Ehi Siri, Jarvis" per catturare a voce.
+- Comandi Rapidi iOS: "Ehi Siri, Jarvis" per catturare spunti/task a voce (le spese sono già fatte).
 - Google Calendar: eventi e turni nel calendario; "Metti in calendario" crea l'evento.
 - "Decide Jarvis": oggi smistamento a parole chiave (`classify()` in app.js; nel dubbio è una task); in futuro AI.
 - Mente: da approfondire più avanti (libri sincronizzati con Notion, argomenti da studiare).

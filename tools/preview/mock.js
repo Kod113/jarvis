@@ -59,6 +59,7 @@ export function createClient(){
     ? { configured:true, connected:false, calendars:[] }
     : { configured:true, connected:true, calendars:[{ calendar_id:'me', summary:'davsorm@gmail.com', enabled:true, is_primary:true }, { calendar_id:'fam', summary:'Famiglia', enabled:true, is_primary:false }] };
   return {
+    rpc: async (name) => ({ data: 'jv_' + 'x'.repeat(48), error: null }),
     functions: {
       async invoke(name, { body }) {
         if (name === 'notion-sync') return { data: body.action === 'archive' ? { ok: true } : { ok: true, pushed: 1, imported: 0, remaining: 0 }, error: null };
