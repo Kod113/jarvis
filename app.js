@@ -637,19 +637,14 @@ function zonesBar(zone) {
 
 function trainingCardHtml(cls = '') {
   const today = activitiesOn(todayYmd());
-  const h = S.health || {};
   let body;
   if (today.length) {
     const a = today[0];
     body = `<span class="act-head">${actIcon(a)}<span class="card-strong">${esc(actLabel(a))} · ${durLabel(a.duration_s)}</span></span>
       <p class="card-label push"><span>Fatto${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${today.length > 1 ? ` · +${today.length - 1}` : ''}</span></p>
       <p class="card-label"><span>${a.avg_hr ? `FC media ${a.avg_hr}` : ''}</span></p>`;
-  } else if (h.readiness != null) {
-    // Nessun allenamento oggi: "Riposo" in evidenza, la prontezza come dato secondario.
-    body = `<p class="card-strong">Riposo</p>
-      <p class="card-label push"><span>Nessun allenamento oggi</span></p>
-      <p class="card-label"><span>Prontezza ${h.readiness}${READY_IT[h.readiness_level] ? ' · ' + READY_IT[h.readiness_level] : ''}</span></p>`;
   } else if (garminLinked()) {
+    // Nessun allenamento oggi: "Riposo" (la prontezza è già nella scheda Corpo).
     body = '<p class="card-strong">Riposo</p><p class="card-label push"><span>Nessun allenamento oggi</span></p>';
   } else {
     body = '<p class="card-strong">Garmin</p><p class="card-label push"><span>Da collegare</span></p>';
