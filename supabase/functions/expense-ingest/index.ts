@@ -1,6 +1,6 @@
 // Riceve una spesa dai Comandi Rapidi di iPhone (automazione "Transazione" del Wallet o "Ehi Siri, spesa").
 // verify_jwt = false. Autenticazione: header x-jarvis-token (token creato da Jarvis, salvato in device_tokens solo come hash).
-// Body JSON: { amount, merchant?, description?, category?, method? ("nfc" | "manual" | "online") }
+// Body JSON: { amount, merchant?, description?, category?, method? ("nfc" | "manual" | "online"), direction? ("in" | "out") }
 import { admin, env, SUPABASE_URL } from '../_shared/google.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -46,9 +46,11 @@ Deno.serve(async (req) => {
     const description = clean(body.description) || merchant || 'Spesa';
     const category = clean(body.category, 40) || 'Da categorizzare';
     const method = ['nfc', 'manual', 'online'].includes(body.method) ? body.method : 'nfc';
+    // Entrata se lo dice il comando rapido o se la categoria è "Entrate" (es. bonifico ricevuto).
+    const direction = body.direction === 'in' || category === 'Entrate' ? 'in' : 'out';
 
     const { data, error } = await db.from('expenses').insert({
-      user_id: dev.user_id, amount, description, merchant: merchant || null, category, method, direction: 'out', source: 'jarvis'
+      user_id: dev.user_id, amount, description, merchant: merchant || null, category, method, direction, source: 'jarvis'
     }).select('id').single();
     if (error) throw error;
     await db.from('device_tokens').update({ last_used_at: new Date().toISOString() }).eq('id', dev.id);
@@ -64,7 +66,7 @@ Deno.serve(async (req) => {
       }).catch(() => null);
       clearTimeout(timer);
     }
-    return json({ ok: true, id: data.id, message: `Salvata in Jarvis: €${amount.toFixed(2).replace('.', ',')} · ${category}` });
+    return json({ ok: true, id: data.id, message: `${direction === 'in' ? 'Entrata salvata' : 'Salvata'}: €${amount.toFixed(2).replace('.', ',')} · ${category}` });
   } catch (e) {
     console.error(e);
     return json({ error: (e as Error).message }, 500);
