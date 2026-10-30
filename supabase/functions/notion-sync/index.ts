@@ -183,7 +183,7 @@ async function importMonth(ctx: Ctx, m: { month_key: string; database_id: string
   }).filter((x) => typeof x.num === 'number' && x.num !== 0);
   const hasNegatives = parsed.some((x) => x.num < 0);
 
-  const { data: existing } = await ctx.db.from('expenses').select('id, notion_page_id, source').eq('user_id', ctx.userId).eq('month_key', m.month_key).not('notion_page_id', 'is', null);
+  const { data: existing } = await ctx.db.from('expenses').select('id, notion_page_id, source, spent_at').eq('user_id', ctx.userId).eq('month_key', m.month_key).not('notion_page_id', 'is', null);
   const known = new Map((existing || []).map((r: Any) => [r.notion_page_id, r]));
   const seen = new Set<string>();
   const inserts: Any[] = [];
@@ -199,6 +199,8 @@ async function importMonth(ctx: Ctx, m: { month_key: string; database_id: string
       month_key: m.month_key
     };
     const k = known.get(x.id);
+    // Notion ha solo il giorno: se coincide, teniamo l'ora esatta salvata da Jarvis.
+    if (k && x.date.length === 10 && k.spent_at && romeDate(k.spent_at) === x.date) delete (fields as Any).spent_at;
     if (k) await ctx.db.from('expenses').update(fields).eq('id', k.id);
     else inserts.push({ ...fields, user_id: ctx.userId, notion_page_id: x.id, source: 'notion', method: 'notion', sent_to_notion_at: new Date().toISOString() });
   }

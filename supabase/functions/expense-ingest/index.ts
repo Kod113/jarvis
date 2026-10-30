@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
     const merchant = clean(body.merchant);
     const description = clean(body.description) || merchant || 'Spesa';
     const category = clean(body.category, 40) || 'Da categorizzare';
-    const method = ['nfc', 'manual', 'online'].includes(body.method) ? body.method : 'nfc';
+    // Senza metodo è una spesa inserita a mano (l'automazione del POS manda sempre method = nfc).
+    const method = ['nfc', 'manual', 'online'].includes(body.method) ? body.method : 'manual';
     // Entrata se lo dice il comando rapido o se la categoria è "Entrate" (es. bonifico ricevuto).
     const direction = body.direction === 'in' || category === 'Entrate' ? 'in' : 'out';
 

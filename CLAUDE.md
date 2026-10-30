@@ -46,6 +46,10 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - Layout Bento su telefono (barra in basso: Oggi · Settimana · Spese · Mente), su computer barra laterale + Calendario a pagina intera (≥1000px).
 - Icona: J corsiva bianca tagliata (stile "J1") su blu di giorno, su grafite di sera.
 - Allenamenti: corsa = icona omino (azzurro), tutto il resto = "Forza" con icona bilanciere (scelta di David).
+- Barra in basso (telefono): pillola arrotondata come la cattura, indicatore che scivola (`--i`), si può trascinare col dito tra le sezioni;
+  la sezione entra con un'animazione laterale. Con la tastiera aperta la cattura sale sopra la tastiera (`visualViewport`, classe `kb-open`).
+- Spunti: tag Task, Frase, Idea, Decide Jarvis ("Da studiare" tolto su richiesta di David: confluisce in Idea; `studio` resta solo per dati vecchi).
+- Cache: `index.html` carica `styles.css?v=…` e `app.js?v=…`: aggiorna la versione a ogni modifica del frontend, sennò l'iPhone resta sulla vecchia.
 - Testi in italiano. Font Geist / Geist Mono.
 
 ## Come lavorare

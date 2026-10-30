@@ -239,9 +239,21 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 .toast.float { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-h) + 100px + env(safe-area-inset-bottom)); z-index: 30; }
 
 /* ---------- Navigazione ---------- */
-.nav-bottom { position: fixed; left: 16px; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 20; max-width: 528px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--card); border-radius: 18px; padding: 6px; gap: 2px; box-shadow: var(--shadow); }
-.nav-bottom button { min-height: 48px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: 12px; }
-.nav-bottom button.on { background: var(--ink); color: var(--bg); }
+.nav-bottom { position: fixed; left: 16px; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 20; max-width: 528px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--card); border-radius: 999px; padding: 6px; box-shadow: var(--shadow); touch-action: pan-y; user-select: none; -webkit-user-select: none; --i: 0; }
+:root[data-theme="dark"] .nav-bottom { border: 1px solid var(--line); }
+/* Indicatore: una pillola che scivola sotto la sezione attiva (posizione = --i, anche frazionaria durante il trascinamento). */
+.nav-ind { position: absolute; top: 6px; bottom: 6px; left: 6px; width: calc((100% - 12px) / 4); border-radius: 999px; background: var(--ink);
+  transform: translateX(calc(var(--i) * 100%)); transition: transform .42s cubic-bezier(.34, 1.4, .5, 1); pointer-events: none; }
+.nav-bottom.dragging .nav-ind { transition: none; transform: translateX(calc(var(--i) * 100%)) scale(1.04); }
+.nav-bottom button { position: relative; z-index: 1; min-height: 48px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; transition: color .25s; -webkit-tap-highlight-color: transparent; }
+.nav-bottom button.on { color: var(--bg); font-weight: 600; }
+.nav-bottom button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Entrata della sezione: scivola dal lato da cui arrivi. */
+@keyframes enter-r { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes enter-l { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: none; } }
+.main.enter-r { animation: enter-r .32s cubic-bezier(.2, .8, .2, 1); }
+.main.enter-l { animation: enter-l .32s cubic-bezier(.2, .8, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .nav-ind { transition: none; } .main.enter-r, .main.enter-l { animation: none; } }
 .rail { display: none; }
 
 /* ---------- Tag ---------- */
@@ -363,3 +375,11 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
   .ev { font-size: 11px; }
   .toast.float { bottom: 28px; }
 }
+
+/* Tastiera aperta (iPhone): la cattura si appoggia sopra la tastiera. */
+:root { --kb: 0px; }
+@media (max-width: 999px) {
+  .kb-open .capture-wrap { bottom: calc(var(--kb) + 10px); transition: bottom .2s ease-out; }
+  .kb-open .nav-bottom { opacity: 0; pointer-events: none; transform: translateY(12px); }
+}
+.nav-bottom { transition: opacity .2s, transform .2s; }

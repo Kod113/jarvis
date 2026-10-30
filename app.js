@@ -17,12 +17,11 @@ const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti',
   'Università', 'Regali', 'Home', 'Lavanderia', 'Burocrazie', 'Svapo', 'Yugi', 'Giorgia', 'Investimenti'];
 const KINDS = [
   { id: 'task', label: 'Task' },
-  { id: 'studio', label: 'Da studiare' },
   { id: 'frase', label: 'Frase' },
   { id: 'idea', label: 'Idea' },
   { id: 'auto', label: 'Decide Jarvis' }
 ];
-const KIND_LABEL = { task: 'Task', studio: 'Da studiare', frase: 'Frase', idea: 'Idea', auto: 'Jarvis' };
+const KIND_LABEL = { task: 'Task', studio: 'Idea', frase: 'Frase', idea: 'Idea', auto: 'Jarvis' };
 const DOW = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 const DOW_LONG = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
 const MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
@@ -322,12 +321,12 @@ function classify(text) {
   const s = text.toLowerCase().trim();
   if (/^["“«'‘]/.test(s) || /["”»’]$/.test(s)) return 'frase';
   if (/^(idea|idee|e se|potrei|sarebbe bello|mi piacerebbe)\b/.test(s)) return 'idea';
-  if (/\?$/.test(s) || /^(cos'è|cosa è|cos è|che cos|che cosa|come funziona|perch[eé]|studiare|approfondire|imparare|capire come|capire cosa|leggere su|scoprire)\b/.test(s)) return 'studio';
+  if (/\?$/.test(s) || /^(cos'è|cosa è|cos è|che cos|che cosa|come funziona|perch[eé]|studiare|approfondire|imparare|capire come|capire cosa|leggere su|scoprire)\b/.test(s)) return 'idea'; // "Da studiare" è confluito in Idea
   // Inizia con un verbo (infinito o imperativo comune) → task.
   const first = s.split(/\s+/)[0];
   if (/(are|ere|ire|rre)$/.test(first) || /^(ricorda|ricordami|devo|dovrei|compra|chiama|paga|prenota|fai|porta|manda|scrivi|rinnova|sistema|pulisci|vai|prendi|controlla|finisci|todo)$/.test(first)) return 'task';
   // Due-quattro parole senza verbo: una parola chiave da approfondire.
-  if (s.split(/\s+/).length <= 4 && !/\d/.test(s)) return 'studio';
+  if (s.split(/\s+/).length <= 4 && !/\d/.test(s)) return 'idea';
   return 'task';
 }
 function cleanTaskTitle(text) {
@@ -445,6 +444,13 @@ function captureHtml() {
   </div>`;
 }
 
+// Barra in basso: indicatore che scivola tra le sezioni, anche trascinando il dito sulla barra.
+const BOTTOM = ['oggi', 'settimana', 'spese', 'mente'];
+const bottomOf = (v) => v === 'calendario' ? 'settimana' : v === 'corpo' ? 'oggi' : v;
+let navPrevIdx = -1;      // posizione dell'indicatore nel render precedente (per animarlo verso la nuova)
+let lastView = null;      // sezione mostrata nel render precedente (per l'animazione d'entrata)
+let navDrag = null;
+
 function navHtml() {
   const items = [
     { id: 'oggi', label: 'Oggi', icon: I.sun },
@@ -462,8 +468,9 @@ function navHtml() {
     <div class="spacer"></div>
     <button data-action="logout" aria-label="Esci">${I.logout}Esci</button>
   </nav>
-  <nav class="nav-bottom" aria-label="Sezioni">
-    ${items.filter((i) => !i.wideOnly).map((i) => `<button class="${bottomView === i.id ? 'on' : ''}" data-action="go" data-id="${i.id}">${i.label}</button>`).join('')}
+  <nav class="nav-bottom" aria-label="Sezioni" style="--i:${navPrevIdx < 0 ? BOTTOM.indexOf(bottomView) : navPrevIdx}">
+    <span class="nav-ind" aria-hidden="true"></span>
+    ${BOTTOM.map((id) => { const i = items.find((x) => x.id === id); return `<button class="${bottomView === id ? 'on' : ''}" data-action="go" data-id="${id}" ${bottomView === id ? 'aria-current="page"' : ''}>${i.label}</button>`; }).join('')}
   </nav>`;
 }
 
@@ -574,9 +581,10 @@ function trainingCardHtml(cls = '') {
       <p class="card-label push"><span>Fatto${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${today.length > 1 ? ` · +${today.length - 1}` : ''}</span></p>
       <p class="card-label"><span>${a.avg_hr ? `FC media ${a.avg_hr}` : ''}</span></p>`;
   } else if (h.readiness != null) {
-    body = `<span class="act-head"><span class="act-icon run" aria-label="Prontezza">${I.gauge}</span><span class="card-strong">Prontezza ${h.readiness}</span></span>
-      <p class="card-label"><span>${READY_IT[h.readiness_level] || ''}</span></p>
-      <p class="card-label push"><span>Nessun allenamento oggi</span></p>`;
+    // Nessun allenamento oggi: "Riposo" in evidenza, la prontezza come dato secondario.
+    body = `<p class="card-strong">Riposo</p>
+      <p class="card-label push"><span>Nessun allenamento oggi</span></p>
+      <p class="card-label"><span>Prontezza ${h.readiness}${READY_IT[h.readiness_level] ? ' · ' + READY_IT[h.readiness_level] : ''}</span></p>`;
   } else if (garminLinked()) {
     body = '<p class="card-strong">Riposo</p><p class="card-label push"><span>Nessun allenamento oggi</span></p>';
   } else {
@@ -1066,7 +1074,8 @@ function viewSpese() {
 
 function viewMente() {
   const u = S.ui;
-  const filters = [['tutto', 'Tutto'], ['studio', 'Da studiare'], ['frase', 'Frasi'], ['idea', 'Idee']];
+  const filters = [['tutto', 'Tutto'], ['idea', 'Idee'], ['frase', 'Frasi']];
+  if (u.mFilter === 'studio') u.mFilter = 'tutto';
   const q = u.mSearch.trim().toLowerCase();
   const all = S.captures.filter((c) => c.kind !== 'task' && (u.mFilter === 'tutto' || c.kind === u.mFilter) && (!q || c.body.toLowerCase().includes(q)));
   const frase = S.captures.find((c) => c.kind === 'frase');
@@ -1096,6 +1105,18 @@ function viewLogin() {
 }
 
 // ---------------------------------------------------------------- Render
+function afterRenderNav() {
+  const target = BOTTOM.indexOf(bottomOf(S.view));
+  const nav = app.querySelector('.nav-bottom');
+  if (nav && navPrevIdx !== target) requestAnimationFrame(() => requestAnimationFrame(() => nav.style.setProperty('--i', target)));
+  if (lastView && lastView !== S.view) {
+    const main = app.querySelector('.main');
+    const dir = BOTTOM.indexOf(bottomOf(S.view)) >= BOTTOM.indexOf(bottomOf(lastView)) ? 'r' : 'l';
+    if (main) main.classList.add('enter-' + dir);
+  }
+  navPrevIdx = target;
+  lastView = S.view;
+}
 const app = document.getElementById('app');
 function render() {
   if (S.loading) { app.innerHTML = '<div class="boot">Jarvis</div>'; return; }
@@ -1107,6 +1128,7 @@ function render() {
   const body = (views[S.view] || viewOggi)();
   const floatToast = S.ui.toast && isWide() ? toastHtml('float') : '';
   app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() ? '' : captureHtml()}${floatToast}</div>`;
+  afterRenderNav();
   if (keepId) {
     const el = document.getElementById(keepId);
     if (el) {
@@ -1272,7 +1294,39 @@ const actions = {
   }
 };
 
+function navIndexAt(nav, x) {
+  const r = nav.getBoundingClientRect();
+  const w = (r.width - 12) / BOTTOM.length;
+  return Math.max(0, Math.min(BOTTOM.length - 1, (x - r.left - 6) / w - 0.5));
+}
+app.addEventListener('pointerdown', (e) => {
+  const nav = e.target.closest('.nav-bottom');
+  if (!nav) return;
+  navDrag = { nav, x0: e.clientX, moved: false, id: e.pointerId };
+});
+app.addEventListener('pointermove', (e) => {
+  if (!navDrag || e.pointerId !== navDrag.id) return;
+  if (!navDrag.moved && Math.abs(e.clientX - navDrag.x0) < 8) return;
+  if (!navDrag.moved) { navDrag.moved = true; navDrag.nav.classList.add('dragging'); try { navDrag.nav.setPointerCapture(e.pointerId); } catch { /* ok */ } }
+  navDrag.nav.style.setProperty('--i', navIndexAt(navDrag.nav, e.clientX));
+});
+const endNavDrag = (e) => {
+  if (!navDrag || e.pointerId !== navDrag.id) return;
+  const d = navDrag; navDrag = null;
+  if (!d.moved) return;
+  d.nav.classList.remove('dragging');
+  const idx = Math.round(navIndexAt(d.nav, e.clientX));
+  d.nav.style.setProperty('--i', idx);
+  navPrevIdx = idx;
+  suppressNavClick = true; setTimeout(() => { suppressNavClick = false; }, 350);
+  if (bottomOf(S.view) !== BOTTOM[idx]) actions.go(BOTTOM[idx]);
+};
+let suppressNavClick = false;
+app.addEventListener('pointerup', endNavDrag);
+app.addEventListener('pointercancel', endNavDrag);
+
 app.addEventListener('click', (e) => {
+  if (suppressNavClick && e.target.closest('.nav-bottom')) { e.preventDefault(); return; }
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
   const fn = actions[el.dataset.action];
@@ -1371,6 +1425,19 @@ applyTheme();
 setInterval(applyTheme, 5 * 60 * 1000);
 // A mezzanotte (o al ritorno sull'app) aggiorna la giornata.
 let lastDay = todayYmd();
+// Tastiera su iPhone: la barra "Cattura qualcosa…" sale sopra la tastiera, così vedi cosa scrivi; la barra in basso si nasconde.
+function fitKeyboard() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+  document.documentElement.style.setProperty('--kb', kb + 'px');
+  document.documentElement.classList.toggle('kb-open', kb > 80);
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', fitKeyboard);
+  window.visualViewport.addEventListener('scroll', fitKeyboard);
+}
+
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !S.session) return;
   applyTheme();
