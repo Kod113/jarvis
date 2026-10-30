@@ -73,7 +73,10 @@ Deno.serve(async (req) => {
               end: e.end?.dateTime || e.end?.date,
               allDay: !!e.start?.date,
               location: e.location || null,
-              taskId: e.extendedProperties?.private?.jarvisTaskId || null
+              taskId: e.extendedProperties?.private?.jarvisTaskId || null,
+              // Evento che riguarda David (nel titolo/descrizione o tra gli invitati): nel calendario Famiglia diventa verde.
+              david: /david/i.test(`${e.summary || ''} ${e.description || ''}`) ||
+                (e.attendees || []).some((a: { self?: boolean; email?: string; displayName?: string }) => a.self || /davsorm|david/i.test(`${a.email || ''} ${a.displayName || ''}`))
             });
           }
         }));

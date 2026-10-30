@@ -213,13 +213,12 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 .tl-row.past .tl-title { color: var(--muted); text-decoration: line-through; font-weight: 400; }
 .tl-row.is-task .tl-dot { border-color: var(--accent); }
 .tl-row.is-task .tl-time { color: var(--accent); }
-.tl-row.is-event .tl-dot { background: var(--ink); border-color: var(--ink); }
-.tl-row.is-event.alt .tl-dot { background: var(--check-off); border-color: var(--check-off); }
+.tl-row.is-event .tl-dot { background: var(--ev); border-color: var(--ev); }
 .tl-row.is-event.past .tl-title { text-decoration: none; }
-.ev.g1 { background: var(--ink); color: var(--bg); box-shadow: none; }
-.ev.g2 { background: var(--line); color: var(--ink); box-shadow: none; }
-.ev-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--ink); }
-.ev-dot.alt { background: var(--check-off); }
+.ev.c-me, .ev.c-fam, .ev.c-david { background: color-mix(in srgb, var(--ev) 20%, transparent); color: var(--ink); box-shadow: inset 3px 0 0 var(--ev); }
+.ev-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--ev, var(--ink)); }
+/* Colori calendari: azzurro = personale, viola = Famiglia, verde = Famiglia con David. */
+.c-me { --ev: #4aa8ff; } .c-fam { --ev: #9b6dff; } .c-david { --ev: #34c38f; }
 .tl-row.now .tl-dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px var(--soft); }
 .tl-row.now .tl-time { color: var(--accent); }
 
@@ -419,7 +418,9 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 @media (prefers-reduced-motion: reduce) { .bump, .capture.sent { animation: none; } }
 
 /* Scheda Allenamento nei giorni senza allenamento. */
-.card-strong.rest-big { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-top: 6px; }
+.card-strong.rest-big { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+.rest-wrap { flex: 1; display: flex; align-items: center; justify-content: center; gap: 12px; padding-bottom: 8px; }
+.act-icon.rest { background: var(--soft); color: var(--accent); }
 
 /* Niente zoom su telefono: niente doppio tocco per ingrandire, e campi a 16px (sotto, iOS ingrandisce quando li tocchi). */
 html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }

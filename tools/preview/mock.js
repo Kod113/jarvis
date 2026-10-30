@@ -56,6 +56,7 @@ export function createClient(){
     { id:'g2', cal:'fam', calName:'Famiglia', primary:false, title:'Cena dai nonni', start:at(1,20,0), end:at(1,22,0), allDay:false },
     { id:'g3', cal:'me', calName:'davsorm@gmail.com', primary:true, title:'Turno · Aeroporto', start:at(2,6,0), end:at(2,14,0), allDay:false },
     { id:'g4', cal:'fam', calName:'Famiglia', primary:false, title:'Compleanno zia', start:add(4), end:add(5), allDay:true },
+    { id:'g5', cal:'fam', calName:'Famiglia', primary:false, title:'Dentista David', start:at(0,9,0), end:at(0,10,0), allDay:false, david:true },
   ];
   const gstate = window.__GCAL === 'off'
     ? { configured:true, connected:false, calendars:[] }

@@ -19,6 +19,9 @@ const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti',
 // Investimenti senza tetto (null).
 const CAT_CAP = { Benza: 130, Spesa: 70, Cibo: 130, Investimenti: null };
 const capOf = (c) => (c in CAT_CAP ? CAT_CAP[c] : 50);
+// Budget del mese = somma dei tetti; modificabile per un singolo mese (ls 'budget:YYYY-MM').
+const CAPS_TOTAL = CATEGORIES.reduce((a, c) => a + (capOf(c) ?? 0), 0);
+const budgetFor = (key) => ls.get('budget:' + key, null) ?? CAPS_TOTAL;
 const KINDS = [
   { id: 'task', label: 'Task' },
   { id: 'frase', label: 'Frase' },
@@ -616,6 +619,8 @@ function tasksCardHtml() {
   </div>`;
 }
 
+// Colore evento: azzurro = calendario personale, verde = Famiglia ma riguarda David, viola = Famiglia.
+const evTone = (e) => (e.primary ? 'c-me' : e.david || /david/i.test(e.title || '') ? 'c-david' : 'c-fam');
 function timelineHtml(day, withNow) {
   const n = nowHHMM();
   const isToday = day === todayYmd();
@@ -625,10 +630,10 @@ function timelineHtml(day, withNow) {
   const evs = eventsOn(day);
   evs.filter((e) => !e.allDay).forEach((e) => items.push({
     time: evTime(e), title: e.title, meta: `${e.calName} · fino alle ${evEnd(e)}`,
-    cls: `is-event ${e.primary ? '' : 'alt'} ${isToday && evEnd(e) <= n ? 'past' : ''}`
+    cls: `is-event ${evTone(e)} ${isToday && evEnd(e) <= n ? 'past' : ''}`
   }));
   items.sort((a, b) => a.time.localeCompare(b.time));
-  evs.filter((e) => e.allDay).reverse().forEach((e) => items.unshift({ time: '—', title: e.title, meta: `${e.calName} · tutto il giorno`, cls: `is-event ${e.primary ? '' : 'alt'}` }));
+  evs.filter((e) => e.allDay).reverse().forEach((e) => items.unshift({ time: '—', title: e.title, meta: `${e.calName} · tutto il giorno`, cls: `is-event ${evTone(e)}` }));
   if (withNow) {
     const idx = items.findIndex((i) => i.time !== '—' && i.time > n);
     const nowRow = { time: 'ora', title: n, meta: 'Adesso', cls: 'now' };
@@ -656,7 +661,7 @@ function trainingCardHtml(cls = '') {
       <p class="card-label"><span>${a.avg_hr ? `FC media ${a.avg_hr}` : ''}</span></p>`;
   } else if (garminLinked()) {
     // Nessun allenamento oggi: "Riposo" (la prontezza è già nella scheda Corpo).
-    body = '<p class="card-strong rest-big">Riposo</p><p class="card-label push"><span>Nessun allenamento oggi</span></p>';
+    body = `<span class="rest-wrap"><span class="act-icon rest" aria-hidden="true">${I.moon}</span><span class="card-strong rest-big">Riposo</span></span>`;
   } else {
     body = '<p class="card-strong">Garmin</p><p class="card-label push"><span>Da collegare</span></p>';
   }
@@ -789,7 +794,7 @@ function nextCardHtml() {
   return `<button class="card tall tile-btn" data-action="toggleDay" aria-expanded="${S.ui.showDay}">
     <span class="card-label"><span>Prossimo</span></span>
     ${next ? `<span class="card-big">${next.time}</span><span class="card-strong push">${esc(next.title)}</span><span class="tl-meta">${esc(next.meta)}</span>`
-      : `<span class="done-badge" aria-hidden="true">${I.checkBig}</span><span class="card-strong push">${hadToday ? 'Per oggi hai fatto tutto' : 'Giornata libera'}</span><span class="tl-meta">${hadToday ? 'Niente altro oggi' : 'Nessun impegno oggi'}</span>`}
+      : `<span class="done-badge" aria-hidden="true">${I.checkBig}</span><span class="card-strong push">${hadToday ? 'Per oggi hai fatto tutto' : 'Giornata libera'}</span>${hadToday ? '' : '<span class="tl-meta">Nessun impegno oggi</span>'}`}
     <span class="link">${S.ui.showDay ? 'Chiudi giornata ↑' : 'Vedi giornata ↓'}</span>
   </button>`;
 }
@@ -824,7 +829,7 @@ function monthGridHtml(offset, sel, compact = false) {
   for (let i = 0; i < lead; i++) cells.push(`<div class="cell out"><span class="n">${addDays(first, i - lead).getDate()}</span></div>`);
   for (let d = 1; d <= days; d++) {
     const id = ymd(new Date(y, m, d));
-    const items = eventsOn(id).map((e) => ({ cls: e.primary ? 'g1' : 'g2', time: e.allDay ? '' : evTime(e), title: e.title }))
+    const items = eventsOn(id).map((e) => ({ cls: evTone(e), time: e.allDay ? '' : evTime(e), title: e.title }))
       .concat(tasksOn(id).map((x) => ({ cls: x.done ? 'done' : '', time: x.due_time ? hhmm(x.due_time) : '', title: x.title })));
     const max = compact ? 2 : 3;
     const evs = items.slice(0, max).map((x) => `<span class="ev ${x.cls}">${x.time ? x.time + ' ' : ''}${esc(x.title)}</span>`).join('');
@@ -855,7 +860,7 @@ function dayPanelHtml(day) {
 
 function eventListHtml(evs) {
   return `<div class="list">${evs.map((e) => `<div class="li">
-    <span class="ev-dot ${e.primary ? '' : 'alt'}"></span>
+    <span class="ev-dot ${evTone(e)}"></span>
     <div class="li-main"><span class="li-title">${esc(e.title)}</span><span class="li-meta">${e.allDay ? 'Tutto il giorno' : `${evTime(e)} – ${evEnd(e)}`} · ${esc(e.calName)}${e.location ? ' · ' + esc(e.location) : ''}</span></div>
   </div>`).join('')}</div>`;
 }
@@ -1076,7 +1081,7 @@ function viewSpese() {
   const ins = all.filter((e) => e.direction === 'in');
   const total = outs.reduce((a, e) => a + Number(e.amount), 0);
   const income = ins.reduce((a, e) => a + Number(e.amount), 0);
-  const budget = ls.get('budget', 600);
+  const budget = budgetFor(key);
   const pct = Math.min(100, Math.round((total / budget) * 100));
   const isCurrent = u.spMonth === 0;
   const dl = daysToPayday();
@@ -1373,10 +1378,13 @@ const actions = {
   },
   notionSync() { notionSync(true); },
   budget() {
-    const cur = ls.get('budget', 600);
-    const v = prompt('Budget mensile in euro', String(cur));
-    const n = Number(String(v || '').replace(',', '.'));
-    if (n > 0) { ls.set('budget', n); render(); }
+    const key = shiftKey(financialKey(new Date()), S.ui.spMonth);
+    const v = prompt(`Budget di ${keyName(key)} in euro (vuoto = somma dei tetti, €${CAPS_TOTAL})`, String(budgetFor(key)));
+    if (v === null) return;
+    const n = Number(String(v).replace(/[€\s]/g, '').replace(',', '.'));
+    if (!String(v).trim() || n === CAPS_TOTAL) ls.set('budget:' + key, null);
+    else if (n > 0) ls.set('budget:' + key, n);
+    render();
   },
   mFilter(id) { S.ui.mFilter = id; render(); },
   tasksAll() { S.ui.tasksAll = !S.ui.tasksAll; render(); },
