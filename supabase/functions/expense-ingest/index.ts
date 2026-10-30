@@ -4,6 +4,8 @@
 import { admin, env, SUPABASE_URL } from '../_shared/google.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+// Ogni risposta ha "message": è la frase che il Comando Rapido mostra nella notifica, anche in caso di errore.
+const fail = (message: string, status: number, reason?: string) => { if (reason) console.warn('expense-ingest:', reason); return json({ ok: false, error: message, message }, status); };
 
 async function sha256(s: string) {
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
@@ -31,17 +33,19 @@ export function parseAmount(v: unknown): number | null {
 const clean = (v: unknown, max = 120) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
+  if (req.method !== 'POST') return fail('Metodo sbagliato: nel comando imposta Metodo = POST', 405, 'metodo ' + req.method);
   try {
-    const token = req.headers.get('x-jarvis-token') || '';
-    if (!token.startsWith('jv_')) return json({ error: 'unauthorized' }, 401);
+    // Toglie spazi, a capo e virgolette incollati per sbaglio insieme al codice.
+    const token = (req.headers.get('x-jarvis-token') || '').replace(/[\s"'“”‘’]/g, '');
+    if (!token) return fail('Manca il codice: aggiungi l\'intestazione x-jarvis-token', 401, 'intestazione assente');
+    if (!token.startsWith('jv_')) return fail('Codice non valido: ricopialo da Jarvis → Spese → Spese dall\'iPhone', 401, `formato errato (lunghezza ${token.length})`);
     const db = admin();
     const { data: dev } = await db.from('device_tokens').select('id, user_id').eq('token_hash', await sha256(token)).maybeSingle();
-    if (!dev) return json({ error: 'unauthorized' }, 401);
+    if (!dev) return fail('Codice non riconosciuto: creane uno nuovo in Jarvis e incollalo nel comando', 401, `codice sconosciuto (lunghezza ${token.length})`);
 
     const body = await req.json().catch(() => ({}));
     const amount = parseAmount(body.amount);
-    if (!amount) return json({ error: 'Importo non valido' }, 400);
+    if (!amount) return fail('Importo non valido: controlla il campo amount', 400, 'importo non valido');
     const merchant = clean(body.merchant);
     const description = clean(body.description) || merchant || 'Spesa';
     const category = clean(body.category, 40) || 'Da categorizzare';
@@ -69,6 +73,6 @@ Deno.serve(async (req) => {
     return json({ ok: true, id: data.id, message: `${direction === 'in' ? 'Entrata salvata' : 'Salvata'}: €${amount.toFixed(2).replace('.', ',')} · ${category}` });
   } catch (e) {
     console.error(e);
-    return json({ error: (e as Error).message }, 500);
+    return json({ ok: false, error: (e as Error).message, message: 'Errore di Jarvis: ' + (e as Error).message }, 500);
   }
 });
