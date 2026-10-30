@@ -1,5 +1,5 @@
 // API Google Calendar per l'app. Chiamata con supabase.functions.invoke('gcal', { body: { action, ... } }).
-// Azioni: status, authUrl, events, syncTask, setCalendar, disconnect.
+// Azioni: status, authUrl, events, syncTask, updateEvent, setCalendar, refreshCalendars, disconnect.
 // verify_jwt = false: l'autenticazione la fa la funzione stessa (getUser con il JWT dell'utente).
 import { accessToken, admin, env, gfetch, makeState, REDIRECT_URI, refreshCalendars, SCOPES } from '../_shared/google.ts';
 
@@ -110,6 +110,23 @@ Deno.serve(async (req) => {
         if (!r.ok) return json({ error: 'Google ha rifiutato l\'evento' }, 502);
         await db.from('tasks').update({ gcal_event_id: r.json.id }).eq('id', task.id);
         return json({ eventId: r.json.id });
+      }
+      case 'updateEvent': {
+        // Modifica da Jarvis di un evento esistente (titolo, inizio, fine): trascinamento, ridimensionamento, rinomina.
+        const { data: cal } = await db.from('calendars').select('calendar_id').eq('user_id', user.id).eq('calendar_id', body.calendarId).maybeSingle();
+        if (!cal || !body.eventId) return json({ error: 'Evento non trovato' }, 404);
+        const ok = (t: unknown) => t && typeof t === 'object' && (('dateTime' in t) || ('date' in t));
+        const patch: Record<string, unknown> = {};
+        if (typeof body.title === 'string' && body.title.trim()) patch.summary = body.title.trim().slice(0, 500);
+        if (ok(body.start) && ok(body.end)) {
+          const clean = (t: { dateTime?: string; date?: string }) => t.date ? { date: t.date, dateTime: null } : { dateTime: t.dateTime, timeZone: 'Europe/Rome', date: null };
+          patch.start = clean(body.start); patch.end = clean(body.end);
+        }
+        if (!Object.keys(patch).length) return json({ error: 'Niente da modificare' }, 400);
+        const token = await accessToken(user.id);
+        const r = await gfetch(token, `/calendars/${encodeURIComponent(cal.calendar_id)}/events/${encodeURIComponent(body.eventId)}`, { method: 'PATCH', body: JSON.stringify(patch) });
+        if (!r.ok) return json({ error: r.status === 403 ? 'Non hai i permessi per modificare questo calendario' : 'Google ha rifiutato la modifica' }, r.status === 403 ? 403 : 502);
+        return json({ ok: true, start: r.json.start?.dateTime || r.json.start?.date, end: r.json.end?.dateTime || r.json.end?.date, title: r.json.summary });
       }
       case 'setCalendar': {
         await db.from('calendars').update({ enabled: !!body.enabled }).eq('user_id', user.id).eq('calendar_id', body.calendarId);

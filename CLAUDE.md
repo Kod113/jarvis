@@ -12,7 +12,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Trigger `private.only_owner_signup` su `auth.users`: solo `davsorm@gmail.com` può registrarsi (e viene confermato subito).
 - Edge Functions (sorgenti in `supabase/functions/`, deploy con `deploy_edge_function` includendo `../_shared/google.ts`):
   - `google-oauth` (verify_jwt **false**): ritorno OAuth da Google, salva i token in `google_tokens` (solo service role).
-  - `gcal` (verify_jwt false, autenticazione interna con getUser): azioni `status`, `authUrl`, `events`, `syncTask`, `setCalendar`, `refreshCalendars`, `disconnect`.
+  - `gcal` (verify_jwt false, autenticazione interna con getUser): azioni `status`, `authUrl`, `events`, `syncTask`, `updateEvent`, `setCalendar`, `refreshCalendars`, `disconnect`.
   - Segreti su Supabase: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (li inserisce David). Calendari mostrati: tabella `calendars` (Personale + Famiglia).
   - Le task con data+ora diventano eventi sul calendario principale (`tasks.gcal_event_id`, `extendedProperties.private.jarvisTaskId`).
   - Notion Calendar legge Google Calendar: nessuna integrazione separata.
@@ -49,6 +49,9 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   fino al prossimo tramonto/alba (`themeOverride` in localStorage), transizione a cerchio con View Transitions.
 - Giornata (pannello del Calendario e Settimana): vista a blocchi di tempo `dayBlocksHtml` (altezza = durata, colonne per sovrapposizioni,
   fasce "Libero · durata" tra gli impegni da 30' in su, linea rossa dell'ora attuale). Colori `evTone`: azzurro personale, viola Famiglia, verde Famiglia con David.
+  Eventi modificabili come su Google (due vie): trascina = sposta (15'), maniglia in basso = durata, tocco = foglio con titolo/giorno/orari
+  (`evOpen`/`evSave` → `saveEvent` → gcal `updateEvent`, ottimistico con ripristino se Google rifiuta). Su telefono il trascinamento parte
+  con pressione prolungata. Gli eventi si ricaricano ogni minuto e al ritorno nell'app (modifiche fatte su Google).
 - Layout Bento su telefono (barra in basso: Oggi · Settimana · Spese · Mente), su computer barra laterale + Calendario a pagina intera (≥1000px).
 - Icona: J corsiva bianca tagliata (stile "J1") su blu di giorno, su grafite di sera.
 - Allenamenti: corsa = icona omino (azzurro), tutto il resto = "Forza" con icona bilanciere (scelta di David).

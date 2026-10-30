@@ -66,6 +66,7 @@ export function createClient(){
     rpc: async (name) => ({ data: 'jv_' + 'x'.repeat(48), error: null }),
     functions: {
       async invoke(name, { body }) {
+        (window.__calls = window.__calls || []).push([name, body]);
         if (name === 'notion-sync') return { data: body.action === 'archive' ? { ok: true } : { ok: true, pushed: 1, imported: 0, remaining: 0 }, error: null };
         if (name === 'garmin-refresh') return { data: { status: 'started' }, error: null };
         if (body.action === 'status') return { data: gstate, error: null };

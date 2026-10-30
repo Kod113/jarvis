@@ -870,13 +870,13 @@ function dayBlocksHtml(day, evs, tasks = []) {
     const st = new Date(e.start), en = new Date(e.end);
     const a = toMin(st);
     const b = ymd(en) > day ? 24 * 60 : Math.max(a + 15, toMin(en)); // oltre mezzanotte: fino a fine giornata
-    return { a, b, title: e.title, tone: evTone(e), meta: `${evTime(e)} – ${evEnd(e)}`, sub: e.calName };
+    return { a, b, title: e.title, tone: evTone(e), meta: `${evTime(e)} – ${evEnd(e)}`, sub: e.calName, ev: e };
   });
   tasks.filter((x) => x.due_time).forEach((x) => {
     const [h, m] = hhmm(x.due_time).split(':').map(Number); const a = h * 60 + m;
     items.push({ a, b: Math.min(a + 30, 24 * 60), title: x.title, tone: 'c-task' + (x.done ? ' done' : ''), meta: `${hhmm(x.due_time)} · task`, sub: '' });
   });
-  const chips = allDay.length ? `<div class="tb-allday">${allDay.map((e) => `<span class="tb-chip ${evTone(e)}">${esc(e.title)}</span>`).join('')}</div>` : '';
+  const chips = allDay.length ? `<div class="tb-allday">${allDay.map((e) => `<button class="tb-chip ${evTone(e)}" data-action="evOpen" data-id="${esc(evKey(e))}">${esc(e.title)}</button>`).join('')}</div>` : '';
   if (!items.length) return chips;
   items.sort((x, y) => x.a - y.a || y.b - x.b);
   // Colonne per gli eventi sovrapposti (per gruppi che si toccano).
@@ -904,11 +904,54 @@ function dayBlocksHtml(day, evs, tasks = []) {
       ${gaps.map(([a, b]) => `<div class="tb-gap" style="top:${y(a)}px;height:${y(b) - y(a)}px"><span>Libero · ${durText(b - a)}</span></div>`).join('')}
       ${items.map((it) => {
         const h = Math.max(20, y(it.b) - y(it.a) - 2);
-        return `<div class="tb-ev ${it.tone} ${h < 34 ? 'short' : ''}" style="top:${y(it.a) + 1}px;height:${h}px;left:calc(${(it.col / it.n) * 100}% + 2px);width:calc(${100 / it.n}% - 4px)" title="${esc(it.title)} · ${esc(it.meta)}">
-          <span class="tb-t">${esc(it.title)}</span><span class="tb-m">${esc(it.meta)}${it.sub ? ' · ' + esc(it.sub) : ''}</span></div>`;
+        const edit = it.ev ? ` data-evkey="${esc(evKey(it.ev))}"` : '';
+        return `<div class="tb-ev ${it.tone} ${h < 34 ? 'short' : ''} ${it.ev ? 'editable' : ''}"${edit} style="top:${y(it.a) + 1}px;height:${h}px;left:calc(${(it.col / it.n) * 100}% + 2px);width:calc(${100 / it.n}% - 4px)" title="${esc(it.title)} · ${esc(it.meta)}">
+          <span class="tb-t">${esc(it.title)}</span><span class="tb-m">${esc(it.meta)}${it.sub ? ' · ' + esc(it.sub) : ''}</span>${it.ev ? '<span class="tb-rs" aria-hidden="true"></span>' : ''}</div>`;
       }).join('')}
       ${nowLine}
     </div>
+  </div>`;
+}
+
+// ---- Modifica eventi (due vie con Google Calendar)
+const evKey = (e) => `${e.cal}|${e.id}`;
+const findEv = (k) => S.events.find((e) => evKey(e) === k);
+const localDT = (d) => `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+const addDaysYmd = (day, n) => ymd(addDays(parseYmd(day), n));
+// Aggiorna subito in Jarvis e poi su Google; se Google rifiuta, torna com'era.
+async function saveEvent(e, { title, start, end }) {
+  const before = { title: e.title, start: e.start, end: e.end };
+  const payload = { calendarId: e.cal, eventId: e.id };
+  if (title != null && title !== e.title) { payload.title = title; e.title = title; }
+  if (start && end) {
+    if (e.allDay) { payload.start = { date: start }; payload.end = { date: end }; }
+    else { payload.start = { dateTime: localDT(start) }; payload.end = { dateTime: localDT(end) }; }
+    e.start = e.allDay ? start : start.toISOString(); e.end = e.allDay ? end : end.toISOString();
+  }
+  render();
+  if (!payload.title && !payload.start) return;
+  try {
+    await gcal('updateEvent', payload);
+  } catch (err) {
+    Object.assign(e, before); render();
+    toast('Calendario: ' + err.message);
+  }
+}
+function evEditorHtml() {
+  const k = S.ui.evEdit; if (!k) return '';
+  const e = findEv(k); if (!e) { S.ui.evEdit = null; return ''; }
+  const u = S.ui;
+  return `<div class="ev-sheet-bg" data-action="evCancel"></div>
+  <div class="ev-sheet card ${evTone(e)}" role="dialog" aria-label="Modifica evento">
+    <p class="card-label"><span><span class="ev-dot ${evTone(e)}"></span> ${esc(e.calName)}</span></p>
+    <label for="evTitle" class="sr-only">Titolo</label>
+    <input id="evTitle" class="field ev-title-in" data-model="evTitle" value="${esc(u.evTitle)}" placeholder="Titolo" autocomplete="off" enterkeyhint="done">
+    <div class="form-row">
+      <label class="ev-f"><span>Giorno</span><input type="date" class="field" data-model="evDay" value="${esc(u.evDay)}"></label>
+      ${e.allDay ? '' : `<label class="ev-f"><span>Inizio</span><input type="time" class="field" data-model="evStart" value="${esc(u.evStart)}" step="300"></label>
+      <label class="ev-f"><span>Fine</span><input type="time" class="field" data-model="evEnd" value="${esc(u.evEnd)}" step="300"></label>`}
+    </div>
+    <div class="row-btns"><button class="btn grow" data-action="evCancel">Annulla</button><button class="btn primary grow2" data-action="evSave">Salva</button></div>
   </div>`;
 }
 
@@ -1256,7 +1299,7 @@ function render() {
   const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente, corpo: viewCorpo };
   const body = (views[S.view] || viewOggi)();
   const floatToast = S.ui.toast && isWide() ? toastHtml('float') : '';
-  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() ? '' : captureHtml()}${floatToast}</div>`;
+  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() ? '' : captureHtml()}${floatToast}${evEditorHtml()}</div>`;
   afterRenderNav();
   if (keepId) {
     const el = document.getElementById(keepId);
@@ -1357,6 +1400,28 @@ const actions = {
       switchIt();
       setTimeout(() => document.documentElement.classList.remove('theme-fade'), 450);
     }
+  },
+  evOpen(k) {
+    const e = findEv(k); if (!e) return;
+    const st = new Date(e.start), en = new Date(e.end);
+    Object.assign(S.ui, { evEdit: k, evTitle: e.title, evDay: e.allDay ? e.start : ymd(st), evStart: e.allDay ? '' : `${pad(st.getHours())}:${pad(st.getMinutes())}`, evEnd: e.allDay ? '' : `${pad(en.getHours())}:${pad(en.getMinutes())}` });
+    render();
+  },
+  evCancel() { S.ui.evEdit = null; render(); },
+  evSave() {
+    const u = S.ui; const e = findEv(u.evEdit); if (!e) return;
+    const title = u.evTitle.trim() || e.title;
+    let start, end;
+    if (e.allDay) {
+      const len = Math.max(1, Math.round((parseYmd(e.end) - parseYmd(e.start)) / 864e5));
+      if (u.evDay && u.evDay !== e.start) { start = u.evDay; end = addDaysYmd(u.evDay, len); }
+    } else if (u.evDay && u.evStart && u.evEnd) {
+      start = new Date(`${u.evDay}T${u.evStart}:00`); end = new Date(`${u.evDay}T${u.evEnd}:00`);
+      if (end <= start) end = addDays(end, 1); // finisce dopo mezzanotte
+      if (start.getTime() === new Date(e.start).getTime() && end.getTime() === new Date(e.end).getTime()) { start = end = null; }
+    }
+    u.evEdit = null;
+    saveEvent(e, { title, start, end });
   },
   // Da task di oggi alla Mente (il contrario di "To-do").
   async toMind(id) {
@@ -1650,6 +1715,75 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', fitKeyboard);
   window.visualViewport.addEventListener('scroll', fitKeyboard);
 }
+
+// ---- Blocchi evento: trascina per spostare, maniglia in basso per allungare/accorciare, tocco per modificare.
+// Su telefono il trascinamento parte con una pressione prolungata (così lo scorrimento della pagina resta normale).
+let tbDrag = null;
+const SNAP = PPH / 4; // 15 minuti
+app.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('.tb-ev[data-evkey]'); if (!el || e.button > 0) return;
+  const ev = findEv(el.dataset.evkey); if (!ev) return;
+  tbDrag = { el, ev, mode: e.target.closest('.tb-rs') ? 'resize' : 'move', x0: e.clientX, y0: e.clientY, top0: parseFloat(el.style.top), h0: parseFloat(el.style.height),
+    laneH: el.parentElement.offsetHeight, active: false, moved: false, pid: e.pointerId, touch: e.pointerType !== 'mouse', delta: 0, timer: null };
+  if (tbDrag.touch) tbDrag.timer = setTimeout(() => { if (tbDrag && !tbDrag.moved) startTbDrag(); }, tbDrag.mode === 'resize' ? 150 : 350);
+});
+function startTbDrag() {
+  tbDrag.active = true; tbDrag.el.classList.add('dragging');
+  try { tbDrag.el.setPointerCapture(tbDrag.pid); } catch { /* ok */ }
+  if (navigator.vibrate) navigator.vibrate(8);
+}
+app.addEventListener('pointermove', (e) => {
+  const d = tbDrag; if (!d || e.pointerId !== d.pid) return;
+  const dy = e.clientY - d.y0, dx = e.clientX - d.x0;
+  if (!d.active) {
+    if (Math.abs(dy) > 6 || Math.abs(dx) > 6) {
+      d.moved = true;
+      if (d.touch) { clearTimeout(d.timer); tbDrag = null; return; } // era uno scorrimento
+      startTbDrag();
+    } else return;
+  }
+  e.preventDefault();
+  const steps = Math.round(dy / SNAP);
+  if (d.mode === 'move') {
+    const top = Math.max(1, Math.min(d.laneH - d.h0, d.top0 + steps * SNAP));
+    d.delta = Math.round((top - d.top0) / SNAP) * 15;
+    d.el.style.top = top + 'px';
+  } else {
+    const h = Math.max(SNAP - 2, Math.min(d.laneH - d.top0, d.h0 + steps * SNAP));
+    d.delta = Math.round((h - d.h0) / SNAP) * 15;
+    d.el.style.height = h + 'px';
+  }
+  const st = new Date(d.ev.start), en = new Date(d.ev.end);
+  const ns = d.mode === 'move' ? new Date(st.getTime() + d.delta * 60000) : st;
+  let ne = new Date(en.getTime() + d.delta * 60000);
+  if (ne - ns < 15 * 60000) ne = new Date(ns.getTime() + 15 * 60000);
+  const m = d.el.querySelector('.tb-m'); if (m) m.textContent = `${hhmm(ns.toTimeString())} – ${hhmm(ne.toTimeString())}`;
+  d.ns = ns; d.ne = ne;
+});
+function endTbDrag(e, cancelled) {
+  const d = tbDrag; if (!d || (e && e.pointerId !== d.pid)) return;
+  clearTimeout(d.timer); tbDrag = null;
+  if (d.active) {
+    if (!cancelled && d.delta) saveEvent(d.ev, { start: d.ns, end: d.ne }); else render();
+  } else if (!d.moved && !cancelled) actions.evOpen(d.el.dataset.evkey);
+}
+app.addEventListener('pointerup', (e) => endTbDrag(e, false));
+app.addEventListener('pointercancel', (e) => endTbDrag(e, true));
+// Durante il trascinamento col dito la pagina non deve scorrere.
+document.addEventListener('touchmove', (e) => { if (tbDrag && tbDrag.active) e.preventDefault(); }, { passive: false });
+app.addEventListener('contextmenu', (e) => { if (e.target.closest('.tb-ev[data-evkey]')) e.preventDefault(); });
+app.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && S.ui.evEdit) actions.evCancel();
+  if (e.key === 'Enter' && e.target.id === 'evTitle') { e.preventDefault(); actions.evSave(); }
+});
+
+// Le modifiche fatte su Google (o da altri dispositivi) arrivano da sole: ricarico gli eventi ogni minuto.
+setInterval(async () => {
+  if (document.visibilityState !== 'visible' || !S.session || !S.gcal.connected || tbDrag || S.ui.evEdit) return;
+  const before = JSON.stringify(S.events);
+  await loadEvents(true);
+  if (!tbDrag && !S.ui.evEdit && JSON.stringify(S.events) !== before) render();
+}, 60 * 1000);
 
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || !S.session) return;
