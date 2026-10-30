@@ -33,8 +33,9 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - Spese da iPhone: funzione `expense-ingest` (verify_jwt false, header `x-jarvis-token`; i token stanno in `device_tokens` solo come sha256,
   creati con RPC `create_device_token`; la scheda "Spese dall'iPhone" per crearli è stata tolta su richiesta di David: se serve un codice nuovo, rimetterla). Body: amount (accetta "€3,20"), merchant,
   description, category, method (nfc/manual/online). Dopo l'inserimento chiama `notion-sync`. Due Comandi Rapidi costruiti a mano da David:
-  automazione Wallet "Transazione" (Per cosa? → Categoria?) e scorciatoia "Spesa" (Quanto? → Per cosa? → Categoria?).
-  Su iPhone/iPad il pulsante "Aggiungi spesa" apre il comando "Spesa" (`shortcuts://run-shortcut?name=Spesa`); sul computer apre il modulo nell'app.
+  automazione Wallet "Transazione" (Per cosa? → Categoria?) e scorciatoia "Spesa manuale" (Quanto? → Per cosa? → Categoria?).
+  Su iPhone/iPad il pulsante "Aggiungi spesa" apre il comando "Spesa manuale" (`shortcuts://run-shortcut?name=Spesa%20manuale`); sul computer apre il modulo nell'app.
+  Movimenti: icona della categoria (`CAT_PATHS` in app.js), riquadro blu = Apple Pay, verde = entrata.
   Entrate: categoria "Entrate" (o `direction: "in"`). Ogni risposta di `expense-ingest` ha `message`, mostrato nella notifica del comando.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**

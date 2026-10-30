@@ -958,9 +958,36 @@ async function notionSync(manual = false) {
 }
 
 // ---------------------------------------------------------------- Comandi Rapidi (iPhone)
-// Su iPhone/iPad "Aggiungi spesa" apre il comando rapido "Spesa"; sul computer resta il modulo dentro l'app.
+// Su iPhone/iPad "Aggiungi spesa" apre il comando rapido "Spesa manuale"; sul computer resta il modulo dentro l'app.
 const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const SHORTCUT_URL = 'shortcuts://run-shortcut?name=' + encodeURIComponent('Spesa');
+const SHORTCUT_URL = 'shortcuts://run-shortcut?name=' + encodeURIComponent('Spesa manuale');
+
+// Icone delle categorie spese (stesse categorie di Notion). Il colore del riquadro indica il metodo: blu = Apple Pay, verde = entrata.
+const CAT_PATHS = {
+  Home: '<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>',
+  Spesa: '<path d="M4 9h16l-2 10H6z"/><path d="M8 9l3-5M16 9l-3-5M9 13v3M15 13v3"/>',
+  Shopping: '<path d="M6 8h12l-1 12H7z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
+  Auto: '<path d="M4 16v-4l2-5h12l2 5v4z"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/><path d="M4 12h16"/>',
+  Benza: '<path d="M5 20V5a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v15M4 20h11M5 10h9M14 8l3 3v6a1.5 1.5 0 0 0 3 0V9l-3-3"/>',
+  Cibo: '<path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 21V3c-2 1-3.5 4-3.5 8H17"/>',
+  Esperienze: '<path d="M3 19l6-9 4 5 3-4 5 8z"/><circle cx="17" cy="6" r="1.5"/>',
+  Entrate: '<path d="M12 4v10M8 10l4 4 4-4M4 16v3h16v-3"/>',
+  Lavanderia: '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M8 6h2"/>',
+  'Università': '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5M22 9v5"/>',
+  Giorgia: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  Formazione: '<path d="M4 5h6a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h6z"/>',
+  Abbonamenti: '<path d="M17 3l3 3-3 3M4 11V9a3 3 0 0 1 3-3h13M7 21l-3-3 3-3M20 13v2a3 3 0 0 1-3 3H4"/>',
+  Investimenti: '<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>',
+  Salute: '<path d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z"/>',
+  Yugi: '<rect x="4" y="6" width="11" height="15" rx="2"/><path d="M8 3h9a2 2 0 0 1 2 2v12"/>',
+  Regali: '<path d="M4 9h16v4H4zM6 13v7h12v-7M12 9v11M12 9c-1.5-4-5-4-4.5-1.5M12 9c1.5-4 5-4 4.5-1.5"/>',
+  Svapo: '<path d="M6 18h10a3.5 3.5 0 0 0 .5-7 5 5 0 0 0-9.6-1A4 4 0 0 0 6 18z"/>',
+  Fun: '<path d="M6.5 9h11a4 4 0 0 1 3.9 4.9l-.5 2.2a2.4 2.4 0 0 1-4.2 1L15 15H9l-1.7 2.1a2.4 2.4 0 0 1-4.2-1l-.5-2.2A4 4 0 0 1 6.5 9z"/><path d="M8 11v3M6.5 12.5h3M16 12h.01M18 13.5h.01"/>',
+  Burocrazie: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
+  Cinema: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M3 11h18M7 7l2 4M13 7l2 4M19 7l-1 4"/>'
+};
+const CAT_DEFAULT = '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="7.5" r="1.5"/>';
+const catIcon = (cat) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CAT_PATHS[cat] || CAT_DEFAULT}</svg>`;
 
 function viewSpese() {
   const u = S.ui;
@@ -981,9 +1008,11 @@ function viewSpese() {
   outs.forEach((e) => { byCat[e.category] = (byCat[e.category] || 0) + Number(e.amount); });
   const cats = Object.entries(byCat).sort((a, c) => c[1] - a[1]);
   const max = cats.length ? cats[0][1] : 1;
-  const icon = (e) => e.direction === 'in' ? `<span class="mv-icon in">${I.plus}</span>`
-    : e.method === 'nfc' ? `<span class="mv-icon nfc">${I.nfc}</span>` : e.method === 'online' ? `<span class="mv-icon">${I.cart}</span>`
-    : e.method === 'notion' ? `<span class="mv-icon">${I.doc}</span>` : `<span class="mv-icon">${I.pen}</span>`;
+  const icon = (e) => {
+    const cat = e.direction === 'in' ? 'Entrate' : e.category;
+    const tint = e.direction === 'in' ? ' in' : e.method === 'nfc' ? ' nfc' : '';
+    return `<span class="mv-icon${tint}" title="${esc(cat)}">${catIcon(cat)}</span>`;
+  };
   const methLabel = { nfc: 'Apple Pay', manual: 'manuale', online: 'online', notion: 'Notion' };
   const ns = S.notion;
   const notionLine = ns.state === 'off' ? '<span>Notion non ancora collegato</span>'
