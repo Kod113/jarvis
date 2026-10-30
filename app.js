@@ -12,7 +12,9 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: tr
 // Roma, per il calcolo dell'alba/tramonto (tema giorno/sera).
 const LAT = 41.9028, LON = 12.4964;
 
-const CATEGORIES = ['Cibo', 'Auto', 'Salute', 'Allenamento', 'Abbonamenti', 'Esperienze', 'Tech', 'Casa', 'Altro'];
+// Stesse categorie dei database spese su Notion.
+const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti', 'Salute', 'Esperienze', 'Fun', 'Cinema', 'Formazione',
+  'Università', 'Regali', 'Home', 'Lavanderia', 'Burocrazie', 'Svapo', 'Yugi', 'Giorgia', 'Investimenti'];
 const KINDS = [
   { id: 'task', label: 'Task' },
   { id: 'studio', label: 'Da studiare' },
@@ -54,6 +56,7 @@ const I = {
   trash: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
   heartFill: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
   battery: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3M6.5 10v4M10 10v4M13.5 10v4"/></svg>',
+  doc: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>',
   logout: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
   logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><g transform="skewX(-12) translate(10 0)"><path d="M56 16 H72 V56 A26 26 0 0 1 20 56 H36 A10 10 0 0 0 56 56 Z" fill="#FFFFFF"/></g><path d="M10 76 L90 32" stroke="var(--logo-bg, #2E5BDB)" stroke-width="6.5"/></svg>'
 };
@@ -121,6 +124,8 @@ const S = {
   captures: [],
   expenses: [],
   health: null,
+  notion: { state: 'idle', lastSync: 0, msg: '' },
+  loadedMonths: new Set(),
   healthDays: [],
   garminSync: 'idle',
   activities: [],
@@ -313,12 +318,17 @@ async function updateTask(id, patch) {
 
 // "Decide Jarvis": smistamento semplice a parole chiave (in futuro: AI).
 function classify(text) {
+  // "Decide Jarvis": nel dubbio è una task. Gli altri tipi solo quando sono evidenti.
   const s = text.toLowerCase().trim();
-  if (/^(ricorda|ricordami|devo|dovrei|compra|comprare|chiama|chiamare|paga|pagare|prenota|prenotare|fai|fare|porta|portare|manda|mandare|scrivi|scrivere|rinnova|rinnovare|sistema|sistemare|pulisci|pulire|vai|andare|prendi|prendere|controlla|controllare|finisci|finire|todo|to do)\b/.test(s)) return 'task';
   if (/^["“«'‘]/.test(s) || /["”»’]$/.test(s)) return 'frase';
-  if (/\?$/.test(s) || /^(cos'è|cosa è|cos è|che cos|come funziona|come si|perch[eé]|capire|studiare|approfondire|imparare|cercare|leggere su)\b/.test(s)) return 'studio';
-  if (s.split(/\s+/).length <= 4) return 'studio';
-  return 'idea';
+  if (/^(idea|idee|e se|potrei|sarebbe bello|mi piacerebbe)\b/.test(s)) return 'idea';
+  if (/\?$/.test(s) || /^(cos'è|cosa è|cos è|che cos|che cosa|come funziona|perch[eé]|studiare|approfondire|imparare|capire come|capire cosa|leggere su|scoprire)\b/.test(s)) return 'studio';
+  // Inizia con un verbo (infinito o imperativo comune) → task.
+  const first = s.split(/\s+/)[0];
+  if (/(are|ere|ire|rre)$/.test(first) || /^(ricorda|ricordami|devo|dovrei|compra|chiama|paga|prenota|fai|porta|manda|scrivi|rinnova|sistema|pulisci|vai|prendi|controlla|finisci|todo)$/.test(first)) return 'task';
+  // Due-quattro parole senza verbo: una parola chiave da approfondire.
+  if (s.split(/\s+/).length <= 4 && !/\d/.test(s)) return 'studio';
+  return 'task';
 }
 function cleanTaskTitle(text) {
   const t = text.trim().replace(/^(ricordami di|ricorda di|ricordami|devo|todo:?|to do:?)\s+/i, '');
@@ -893,61 +903,131 @@ function viewSettimana() {
   </div>`;
 }
 
+// ---------------------------------------------------------------- Spese: mese finanziario (dal 27 al 26)
+// Il mese prende il nome da quello in cui finisce: 27 ott – 26 nov = Novembre (come su Notion).
+function financialKey(d) {
+  const m = d.getMonth() + (d.getDate() >= 27 ? 1 : 0);
+  const x = new Date(d.getFullYear(), m, 1);
+  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}`;
+}
+function shiftKey(key, n) { const [y, m] = key.split('-').map(Number); const x = new Date(y, m - 1 + n, 1); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}`; }
+function keyRange(key) { const [y, m] = key.split('-').map(Number); return { start: new Date(y, m - 2, 27), end: new Date(y, m - 1, 26) }; }
+const keyName = (key) => { const [y, m] = key.split('-').map(Number); return `${MONTHS[m - 1].replace(/^./, (c) => c.toUpperCase())} ${y}`; };
+const shortDate = (d) => `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`;
+function daysToPayday() {
+  const now = new Date(); const t = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let p = new Date(t.getFullYear(), t.getMonth(), 27);
+  if (t >= p) p = new Date(t.getFullYear(), t.getMonth() + 1, 27);
+  return Math.round((p - t) / 864e5);
+}
+async function ensureMonthLoaded(key) {
+  if (S.loadedMonths.has(key)) return;
+  S.loadedMonths.add(key);
+  const { data, error } = await sb.from('expenses').select('*').eq('month_key', key).order('spent_at', { ascending: false }).limit(1000);
+  if (error) { S.loadedMonths.delete(key); return; }
+  const ids = new Set(S.expenses.map((e) => e.id));
+  S.expenses.push(...(data || []).filter((e) => !ids.has(e.id)));
+  render();
+}
+
+// Sincronizzazione con Notion (funzione notion-sync): invia le spese nuove, crea il database del mese, importa lo storico.
+async function notionSync(manual = false) {
+  if (S.notion.state === 'running') return;
+  S.notion.state = 'running'; render();
+  try {
+    let r;
+    for (let i = 0; i < 6; i++) {
+      const { data, error } = await sb.functions.invoke('notion-sync', { body: { action: 'sync' } });
+      if (error) { let m = error.message; try { const b = await error.context.json(); m = b.hint || b.error || m; } catch { /* */ } throw new Error(m); }
+      r = data;
+      if (r.status === 'not_configured' || !r.remaining) break;
+    }
+    if (r.status === 'not_configured') { S.notion = { state: 'off', lastSync: Date.now(), msg: '' }; render(); return; }
+    S.notion = { state: 'ok', lastSync: Date.now(), msg: '' };
+    S.loadedMonths = new Set();
+    await loadAll();
+    await ensureMonthLoaded(shiftKey(financialKey(new Date()), S.ui.spMonth));
+    render();
+    if (manual) toast(r.pushed ? `Inviate a Notion: ${r.pushed}` : 'Notion è aggiornato');
+  } catch (err) {
+    console.warn(err);
+    S.notion = { state: 'error', lastSync: Date.now(), msg: err.message };
+    render();
+    if (manual) toast('Notion: ' + err.message);
+  }
+}
+
 function viewSpese() {
   const u = S.ui;
-  const b = new Date(); b.setDate(1); b.setMonth(b.getMonth() + u.spMonth);
-  const y = b.getFullYear(), m = b.getMonth();
-  const list = S.expenses.filter((e) => { const d = new Date(e.spent_at); return d.getFullYear() === y && d.getMonth() === m; });
-  const total = list.reduce((a, e) => a + Number(e.amount), 0);
+  const curKey = financialKey(new Date());
+  const key = shiftKey(curKey, u.spMonth);
+  const { start, end } = keyRange(key);
+  ensureMonthLoaded(key);
+  const all = S.expenses.filter((e) => (e.month_key || financialKey(new Date(e.spent_at))) === key).sort((a, b) => b.spent_at.localeCompare(a.spent_at));
+  const outs = all.filter((e) => e.direction !== 'in');
+  const ins = all.filter((e) => e.direction === 'in');
+  const total = outs.reduce((a, e) => a + Number(e.amount), 0);
+  const income = ins.reduce((a, e) => a + Number(e.amount), 0);
   const budget = ls.get('budget', 600);
   const pct = Math.min(100, Math.round((total / budget) * 100));
   const isCurrent = u.spMonth === 0;
-  const daysLeft = new Date(y, m + 1, 0).getDate() - new Date().getDate();
+  const dl = daysToPayday();
   const byCat = {};
-  list.forEach((e) => { byCat[e.category] = (byCat[e.category] || 0) + Number(e.amount); });
+  outs.forEach((e) => { byCat[e.category] = (byCat[e.category] || 0) + Number(e.amount); });
   const cats = Object.entries(byCat).sort((a, c) => c[1] - a[1]);
   const max = cats.length ? cats[0][1] : 1;
-  const icon = (meth) => meth === 'nfc' ? `<span class="mv-icon nfc">${I.nfc}</span>` : meth === 'online' ? `<span class="mv-icon">${I.cart}</span>` : `<span class="mv-icon">${I.pen}</span>`;
-  const methLabel = { nfc: 'Apple Pay', manual: 'manuale', online: 'online' };
+  const icon = (e) => e.direction === 'in' ? `<span class="mv-icon in">${I.plus}</span>`
+    : e.method === 'nfc' ? `<span class="mv-icon nfc">${I.nfc}</span>` : e.method === 'online' ? `<span class="mv-icon">${I.cart}</span>`
+    : e.method === 'notion' ? `<span class="mv-icon">${I.doc}</span>` : `<span class="mv-icon">${I.pen}</span>`;
+  const methLabel = { nfc: 'Apple Pay', manual: 'manuale', online: 'online', notion: 'Notion' };
+  const ns = S.notion;
+  const notionLine = ns.state === 'off' ? '<span>Notion non ancora collegato</span>'
+    : ns.state === 'running' ? '<span>Sincronizzo con Notion…</span>'
+    : ns.state === 'error' ? `<span class="err">${esc(ns.msg || 'Errore con Notion')}</span>`
+    : ns.state === 'ok' ? `<span>Allineato con Notion · ${pad(new Date(ns.lastSync).getHours())}:${pad(new Date(ns.lastSync).getMinutes())}</span>` : '<span></span>';
   const addForm = u.adding ? `<div class="card">
-    <p class="card-label"><span>Nuova spesa</span></p>
+    <p class="card-label"><span>${u.exMethod === 'in' ? 'Nuova entrata' : 'Nuova spesa'}</span></p>
     <div class="form-row">
       <label for="exAmount" class="sr-only">Importo</label>
       <input id="exAmount" class="field amount" data-model="exAmount" value="${esc(u.exAmount)}" inputmode="decimal" placeholder="0,00">
       <label for="exDesc" class="sr-only">Cosa</label>
-      <input id="exDesc" class="field grow" data-model="exDesc" value="${esc(u.exDesc)}" placeholder="Cosa? (es. Amazon · libro)">
+      <input id="exDesc" class="field grow" data-model="exDesc" value="${esc(u.exDesc)}" placeholder="${u.exMethod === 'in' ? 'Da dove? (es. Stipendio)' : 'Cosa? (es. Amazon · libro)'}">
     </div>
-    <div class="chips">${CATEGORIES.map((c) => `<button class="chip ${u.exCat === c ? 'on' : ''}" data-action="exCat" data-id="${c}">${c}</button>`).join('')}</div>
-    <div class="chips">${[['manual', 'In negozio'], ['online', 'Online']].map(([id, l]) => `<button class="chip blue ${u.exMethod === id ? 'on' : ''}" data-action="exMethod" data-id="${id}">${l}</button>`).join('')}</div>
+    <div class="chips">${[['manual', 'In negozio'], ['online', 'Online'], ['in', 'Entrata']].map(([id, l]) => `<button class="chip blue ${u.exMethod === id ? 'on' : ''}" data-action="exMethod" data-id="${id}">${l}</button>`).join('')}</div>
+    ${u.exMethod === 'in' ? '' : `<div class="chips">${CATEGORIES.map((c) => `<button class="chip ${u.exCat === c ? 'on' : ''}" data-action="exCat" data-id="${c}">${c}</button>`).join('')}</div>`}
     <div class="row-btns"><button class="btn grow" data-action="cancelExpense">Annulla</button><button class="btn dark grow2" data-action="saveExpense">Salva</button></div>
   </div>` : '';
-  return `${headHtml(`${MONTHS[m].replace(/^./, (c) => c.toUpperCase())} ${y}`, 'Spese', `<div class="week-nav">
+  return `${headHtml(`${shortDate(start)} – ${shortDate(end)}`, 'Spese', `<div class="week-nav">
       <button data-action="spMonth" data-id="-1" aria-label="Mese precedente">${I.left}</button>
-      <button data-action="spMonth" data-id="1" aria-label="Mese successivo" ${isCurrent ? 'disabled' : ''}>${I.right}</button>
-      <button class="btn primary" data-action="addExpense" style="min-height:40px">${I.plus} Aggiungi</button></div>`)}
+      <button data-action="spMonth" data-id="1" aria-label="Mese successivo" ${isCurrent ? 'disabled' : ''}>${I.right}</button></div>`)}
+  <button class="btn primary add-big" data-action="addExpense">${I.plus} Aggiungi spesa</button>
+  ${addForm}
   <div class="hero">
-    <p class="lbl">${isCurrent ? 'Speso questo mese' : 'Speso nel mese'}</p>
+    <p class="lbl">${keyName(key)}${isCurrent ? ' · mese in corso' : ''}</p>
     <div style="display:flex;align-items:baseline;gap:8px"><span class="big">€${eur(total)}</span><button class="of" data-action="budget">di €${eur(budget).replace(',00', '')}</button></div>
     <div class="bar"><div style="width:${pct}%"></div></div>
-    <div class="foot"><span>${total <= budget ? `Restano €${eur(budget - total)}` : `Sforato di €${eur(total - budget)}`}</span><span>${isCurrent ? `${daysLeft} giorni alla fine del mese` : ''}</span></div>
+    <div class="foot"><span>${total <= budget ? `Restano €${eur(budget - total)}` : `Sforato di €${eur(total - budget)}`}</span>
+      <span>${isCurrent ? (dl === 0 ? 'Oggi arriva lo stipendio' : `${dl} ${dl === 1 ? 'giorno' : 'giorni'} allo stipendio`) : ''}</span></div>
+    ${income ? `<div class="foot"><span>Entrate €${eur(income)}</span><span>Saldo ${income - total >= 0 ? '+' : '−'}€${eur(Math.abs(income - total))}</span></div>` : ''}
   </div>
-  ${addForm}
   <div class="card">
     <p class="card-label"><span>Per categoria</span></p>
-    ${cats.length ? cats.map(([c, v]) => `<div class="cat-row"><div class="cat-top"><span>${esc(c)}</span><span class="mono muted">€${eur(v)}</span></div><div class="cat-bar"><div style="width:${Math.round((v / max) * 100)}%"></div></div></div>`).join('') : '<p class="empty">Ancora nessuna spesa questo mese.</p>'}
+    ${cats.length ? cats.map(([c, v]) => `<div class="cat-row"><div class="cat-top"><span>${esc(c)}</span><span class="mono muted">€${eur(v)}</span></div><div class="cat-bar"><div style="width:${Math.round((v / max) * 100)}%"></div></div></div>`).join('') : '<p class="empty">Ancora nessuna spesa in questo mese.</p>'}
   </div>
   <div class="card">
-    <p class="card-label"><span>Movimenti</span><span>${list.length}</span></p>
-    <div class="list">${list.map((e) => {
+    <p class="card-label"><span>Movimenti</span><span>${all.length}</span></p>
+    <div class="list">${all.map((e) => {
       const d = new Date(e.spent_at);
-      return `<div class="li">${icon(e.method)}
-        <div class="li-main"><span class="li-title">${esc(e.description)}</span><span class="li-meta">${esc(e.category)} · ${methLabel[e.method] || e.method} · ${dayLabel(ymd(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}</span></div>
-        <span class="mono">−${eur(e.amount)}</span>
+      const when = e.source === 'notion' ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : `${dayLabel(ymd(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `<div class="li">${icon(e)}
+        <div class="li-main"><span class="li-title">${esc(e.description)}</span><span class="li-meta">${esc(e.direction === 'in' ? 'Entrata' : e.category)} · ${methLabel[e.method] || e.method} · ${when}</span></div>
+        <span class="mono ${e.direction === 'in' ? 'pos' : ''}">${e.direction === 'in' ? '+' : '−'}${eur(e.amount)}</span>
         <button class="x-btn" data-action="delExpense" data-id="${e.id}" aria-label="Elimina ${esc(e.description)}">${I.x}</button>
       </div>`;
     }).join('') || '<p class="empty">Nessun movimento.</p>'}</div>
   </div>
-  <button class="btn" disabled title="In arrivo">Invia a Notion · in arrivo</button>`;
+  <div class="notion-row">${notionLine}
+    <button class="btn" data-action="notionSync" ${ns.state === 'running' ? 'disabled' : ''}>${ns.state === 'off' ? 'Riprova' : 'Sincronizza con Notion'}</button></div>`;
 }
 
 function viewMente() {
@@ -1005,7 +1085,7 @@ function render() {
 
 // ---------------------------------------------------------------- Azioni
 const actions = {
-  go(id) { S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
+  go(id) { if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300); S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
   kind(id) { S.ui.kind = id; focusLater('cap'); render(); },
   saveCapture() { saveCapture(); },
   mic() { if (S.ui.listening) { stopListening(); render(); } else startListening(); },
@@ -1085,22 +1165,30 @@ const actions = {
     const u = S.ui;
     const amount = Number(String(u.exAmount).replace(/\s/g, '').replace(',', '.'));
     if (!amount || amount < 0) { toast('Scrivi un importo valido'); return; }
-    if (!u.exDesc.trim()) { toast('Scrivi cosa hai comprato'); return; }
+    if (!u.exDesc.trim()) { toast(u.exMethod === 'in' ? 'Scrivi da dove arriva' : 'Scrivi cosa hai comprato'); return; }
+    const isIn = u.exMethod === 'in';
     try {
-      const { data, error } = await sb.from('expenses').insert({ amount, description: u.exDesc.trim(), category: u.exCat, method: u.exMethod }).select().single();
+      const { data, error } = await sb.from('expenses').insert({
+        amount, description: u.exDesc.trim(), category: isIn ? 'Entrate' : u.exCat, method: isIn ? 'manual' : u.exMethod, direction: isIn ? 'in' : 'out'
+      }).select().single();
       if (error) throw error;
       S.expenses.unshift(data);
-      Object.assign(u, { adding: false, exAmount: '', exDesc: '', spMonth: 0 });
-      toast(`Salvata: €${eur(amount)} in ${data.category}`);
+      Object.assign(u, { adding: false, exAmount: '', exDesc: '', spMonth: 0, exMethod: 'manual' });
+      toast(isIn ? `Entrata salvata: €${eur(amount)}` : `Salvata: €${eur(amount)} in ${data.category}`);
+      if (S.notion.state !== 'off') notionSync(false);
     } catch (err) { fail(err); }
   },
   async delExpense(id) {
     const e = S.expenses.find((x) => x.id === id); if (!e) return;
-    if (!confirm(`Eliminare "${e.description}" (€${eur(e.amount)})?`)) return;
+    if (!confirm(`Eliminare "${e.description}" (€${eur(e.amount)})?${e.notion_page_id ? ' Verrà tolta anche da Notion.' : ''}`)) return;
     S.expenses = S.expenses.filter((x) => x.id !== id); render();
+    if (e.notion_page_id) {
+      try { await sb.functions.invoke('notion-sync', { body: { action: 'archive', pageId: e.notion_page_id } }); } catch (err) { console.warn(err); }
+    }
     const { error } = await sb.from('expenses').delete().eq('id', id);
     if (error) fail(error);
   },
+  notionSync() { notionSync(true); },
   budget() {
     const cur = ls.get('budget', 600);
     const v = prompt('Budget mensile in euro', String(cur));

@@ -135,6 +135,14 @@ button.card { border: 0; text-align: left; color: inherit; font: inherit; }
 .trend.good { color: #2F7A4A; } .trend.bad { color: #C4362B; }
 :root[data-theme="dark"] .trend.good { color: #7FC29B; } :root[data-theme="dark"] .trend.bad { color: #FF8A7A; }
 
+.add-big { min-height: 52px; font-size: 16px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: 16px; }
+.mv-icon.in { background: #E3F1E7; color: #2F7A4A; }
+:root[data-theme="dark"] .mv-icon.in { background: #16301F; color: #7FC29B; }
+.mono.pos { color: #2F7A4A; }
+:root[data-theme="dark"] .mono.pos { color: #7FC29B; }
+.notion-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 0 4px; }
+.notion-row .err { color: #C4362B; }
+
 /* ---------- Task ---------- */
 .tasks { padding: 12px 8px 12px 16px; gap: 0; }
 .tasks .card-label { padding: 4px 8px 4px 0; }

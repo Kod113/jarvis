@@ -24,6 +24,12 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Sync su richiesta: funzione `garmin-refresh` (verify_jwt false, solo il proprietario) avvia `workflow_dispatch` con il segreto Supabase
   `JARVIS_GITHUB_TOKEN` (PAT fine-grained, Actions read/write sul solo repo). L'app la chiama da sola al mattino (4–14) se manca il sonno
   di oggi (max ogni 20 min) e con il pulsante ↻ nella scheda Corpo. I cron di GitHub possono ritardare di ore: non fidarsi solo di quelli.
+- Spese ↔ Notion: funzione `notion-sync` (verify_jwt false; JWT del proprietario o `x-ingest-token`). Segreto Supabase `NOTION_TOKEN`
+  (integrazione interna con accesso a Soldi / Budgeting, id `91d155375a2c4515870b57efc3256b72`). Struttura Notion: Budgeting / <anno> / <Mese> con
+  database inline "<Mese> <anno>" (Motivo title, Date, euro: negativo = uscita, Category multi_select). Mese finanziario dal 27 al 26, chiamato col
+  mese in cui finisce (`expenses.month_key` 'YYYY-MM', trigger `financial_month`). La sync crea il database del mese se manca, invia le spese Jarvis
+  (`source='jarvis'`, `notion_page_id` null), importa/aggiorna mese corrente e precedente e lo storico (`notion_months.imported_at`).
+  Righe cancellate su Notion spariscono da Jarvis. Workflow `.github/workflows/notion.yml` 2 volte al giorno; l'app sincronizza aprendo Spese.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.
@@ -43,8 +49,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 4. Rispondi a David con una riga su cosa è cambiato.
 
 ## Idee/roadmap (chieste da David)
-- Spese: tasto "Invia a Notion" che ogni settimana manda le voci al database spese Notion già alimentato da Trade Republic.
 - Comandi Rapidi iOS: automazione Wallet (pagamento NFC → nome, categoria, importo) e "Ehi Siri, Jarvis" per catturare a voce.
 - Google Calendar: eventi e turni nel calendario; "Metti in calendario" crea l'evento.
-- "Decide Jarvis": oggi smistamento a parole chiave (`classify()` in app.js); in futuro AI.
+- "Decide Jarvis": oggi smistamento a parole chiave (`classify()` in app.js; nel dubbio è una task); in futuro AI.
 - Mente: da approfondire più avanti (libri sincronizzati con Notion, argomenti da studiare).

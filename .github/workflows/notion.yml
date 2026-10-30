@@ -1,0 +1,23 @@
+name: Spese → Notion
+
+# Ogni giorno allinea le spese tra Jarvis e Notion. Il 27 (stipendio) crea da solo il database del nuovo mese.
+on:
+  schedule:
+    - cron: "47 5,17 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sincronizza
+        env:
+          JARVIS_INGEST_TOKEN: ${{ secrets.JARVIS_INGEST_TOKEN }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            res=$(curl -sS -X POST "https://ywebxcgltxvxgqptjuxk.supabase.co/functions/v1/notion-sync" \
+              -H "content-type: application/json" -H "x-ingest-token: $JARVIS_INGEST_TOKEN" -d '{"action":"sync"}')
+            echo "$res" | python3 -c "import json,sys;r=json.load(sys.stdin);print({k:r.get(k) for k in ('status','current','pushed','imported','remaining','error')})"
+            echo "$res" | python3 -c "import json,sys;r=json.load(sys.stdin);sys.exit(0 if (r.get('remaining') or 0)>0 else 1)" || break
+          done

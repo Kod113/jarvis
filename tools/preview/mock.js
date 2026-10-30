@@ -17,6 +17,7 @@ const db = {
   expenses: [
     { id:'e1', amount:3.2, description:'Bar Aeroporto', category:'Cibo', method:'nfc', spent_at:new Date().toISOString() },
     { id:'e2', amount:50, description:'Benzina', category:'Auto', method:'nfc', spent_at:new Date(Date.now()-3*864e5).toISOString() },
+    { id:'e4', amount:1450, description:'Stipendio', category:'Entrate', method:'manual', direction:'in', spent_at:new Date(Date.now()-2*864e5).toISOString() },
     { id:'e3', amount:10.99, description:'Spotify', category:'Abbonamenti', method:'manual', spent_at:new Date(Date.now()-864e5).toISOString() },
   ],
   health_daily: [0,1,2,3,4,5,6].map(i => ({ day: add(-i), sleep_minutes: 380 + i*9 % 60, deep_min: 80, light_min: 250, rem_min: 100, awake_min: 15, sleep_score: 70 + (i*7)%20, resting_hr: 50 + (i*3)%6, hrv: 42 + (i*5)%14, hrv_status: 'BALANCED', body_battery_wake: 60 + (i*11)%35, readiness: 55 + (i*9)%40, readiness_level: 'MODERATE', steps: 6000 + i*900 })),
@@ -60,6 +61,7 @@ export function createClient(){
   return {
     functions: {
       async invoke(name, { body }) {
+        if (name === 'notion-sync') return { data: body.action === 'archive' ? { ok: true } : { ok: true, pushed: 1, imported: 0, remaining: 0 }, error: null };
         if (name === 'garmin-refresh') return { data: { status: 'started' }, error: null };
         if (body.action === 'status') return { data: gstate, error: null };
         if (body.action === 'events') return { data: { events: gstate.connected ? events : [] }, error: null };
