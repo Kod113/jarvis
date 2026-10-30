@@ -947,7 +947,6 @@ function viewSettimana() {
   // Riepilogo settimana scorsa
   const pMon = addDays(mondayOf(new Date()), -7); const pSun = addDays(pMon, 6);
   const inPrev = (iso) => { const d = ymd(new Date(iso)); return d >= ymd(pMon) && d <= ymd(pSun); };
-  const doneN = S.tasks.filter((x) => x.done && x.done_at && inPrev(x.done_at)).length;
   // La settimana scorsa può cadere nel mese finanziario precedente: carichiamo i mesi che tocca. Le entrate non sono spese.
   ensureMonthLoaded(financialKey(pMon)); ensureMonthLoaded(financialKey(pSun));
   const spent = S.expenses.filter((e) => e.direction !== 'in' && inPrev(e.spent_at)).reduce((a, e) => a + Number(e.amount), 0);
@@ -967,10 +966,7 @@ function viewSettimana() {
     <p class="card-label"><span>Inbox · da smistare</span><span class="mono">${inbox().length}</span></p>
     ${inboxListHtml(50, true, u.weekSel)}
   </div>
-  <div class="grid2" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-    <div class="card"><p class="stat-l">Task fatte la settimana scorsa</p><p class="stat-v">${doneN}</p></div>
-    <div class="card"><p class="stat-l">Speso la settimana scorsa</p><p class="stat-v">€${eur(spent)}</p></div>
-  </div>`;
+  <div class="card"><p class="stat-l">Speso la settimana scorsa</p><p class="stat-v">€${eur(spent)}</p></div>`;
 }
 
 // ---------------------------------------------------------------- Spese: mese finanziario (dal 27 al 26)

@@ -66,4 +66,5 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - Comandi Rapidi iOS: "Ehi Siri, Jarvis" per catturare spunti/task a voce (le spese sono già fatte).
 - Google Calendar: eventi e turni nel calendario; "Metti in calendario" crea l'evento.
 - "Decide Jarvis": oggi smistamento a parole chiave (`classify()` in app.js; nel dubbio è una task); in futuro AI.
+- Settimana: al posto del contatore task fatte (tolto) un blocco utile da decidere: idee proposte turni della settimana, allenamenti, sonno medio.
 - Mente: da approfondire più avanti (libri sincronizzati con Notion, argomenti da studiare).
