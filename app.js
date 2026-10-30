@@ -28,6 +28,8 @@ const TIMES = ['09:00', '12:00', '15:30', '18:00', '21:00'];
 
 // ---------------------------------------------------------------- Icone
 const I = {
+  moon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
+  sunSmall: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
   clock: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>',
   mic: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
@@ -102,15 +104,35 @@ function sunTimes(date) {
   const toDate = (j) => new Date((j - 2440587.5) * 864e5);
   return { rise: toDate(Jt - w / 360), set: toDate(Jt + w / 360) };
 }
-function applyTheme() {
-  const now = new Date();
+// Tema: automatico (scuro dal tramonto all'alba, Roma). Il pulsante sole/luna lo forza fino al prossimo tramonto o alba.
+function autoDark(now) { const { rise, set } = sunTimes(now); return now < rise || now > set; }
+function nextSunChange(now) {
   const { rise, set } = sunTimes(now);
-  const dark = now < rise || now > set;
+  if (now < rise) return rise.getTime();
+  if (now < set) return set.getTime();
+  const t = new Date(now); t.setDate(t.getDate() + 1);
+  return sunTimes(t).rise.getTime();
+}
+function isDark() {
+  const now = new Date();
+  const o = ls.get('themeOverride', null);
+  if (o && Date.now() < o.until) return o.theme === 'dark';
+  return autoDark(now);
+}
+function applyTheme() {
+  const dark = isDark();
   const theme = dark ? 'dark' : 'light';
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.setProperty('--logo-bg', dark ? '#17171A' : '#2E5BDB');
   const meta = document.getElementById('theme-color');
   if (meta) meta.content = dark ? '#0F0F11' : '#EFEFEC';
+}
+// Pulsante sole/luna: luna di giorno (porta alla notte), sole di sera (porta al giorno).
+let themeAnimUntil = 0; // l'icona ruota solo subito dopo il cambio, non a ogni render
+function themeBtnHtml(cls = '') {
+  const dark = isDark();
+  return `<button class="theme-btn ${cls} ${Date.now() < themeAnimUntil ? 'anim' : ''}" data-action="toggleTheme" aria-label="${dark ? 'Passa al tema chiaro' : 'Passa al tema scuro'}">
+    <span class="ti ti-moon ${dark ? '' : 'show'}">${I.moon}</span><span class="ti ti-sun ${dark ? 'show' : ''}">${I.sunSmall}</span>${cls === 'rail-theme' ? `<span class="rl">${dark ? 'Giorno' : 'Notte'}</span>` : ''}</button>`;
 }
 
 // ---------------------------------------------------------------- Stato
@@ -333,11 +355,44 @@ function cleanTaskTitle(text) {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// Animazione della cattura: una pillola col testo parte dalla barra e vola verso la sezione di destinazione.
+function flyCapture(text, target) {
+  const from = document.querySelector('.capture');
+  if (!from || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const a = from.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'fly'; el.textContent = text;
+  document.body.appendChild(el);
+  const w = el.offsetWidth, h = el.offsetHeight;
+  const x0 = a.left + 20, y0 = a.top + (a.height - h) / 2;
+  el.style.left = x0 + 'px'; el.style.top = y0 + 'px';
+  setTimeout(() => {
+    // La destinazione si cerca dopo il render (la barra viene ridisegnata).
+    const sel = isWide() ? `.rail [data-id="${target}"]` : `.nav-bottom [data-id="${target}"]`;
+    const t = document.querySelector(sel);
+    const cap = document.querySelector('.capture');
+    if (cap) { cap.classList.remove('sent'); void cap.offsetWidth; cap.classList.add('sent'); }
+    const b = t ? t.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight, width: 0, height: 0 };
+    const dx = b.left + b.width / 2 - (x0 + w / 2), dy = b.top + b.height / 2 - (y0 + h / 2);
+    const anim = el.animate([
+      { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+      { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 60}px) scale(.8)`, opacity: 1, offset: 0.5 },
+      { transform: `translate(${dx}px, ${dy}px) scale(.2)`, opacity: 0.2 }
+    ], { duration: 650, easing: 'cubic-bezier(.45, 0, .25, 1)' });
+    anim.onfinish = () => {
+      el.remove();
+      const t2 = document.querySelector(sel);
+      if (t2) { t2.classList.remove('bump'); void t2.offsetWidth; t2.classList.add('bump'); setTimeout(() => t2.classList.remove('bump'), 500); }
+    };
+  }, 30);
+}
+
 async function saveCapture() {
   const text = S.ui.draft.trim();
   if (!text) { S.ui.capOpen = false; render(); return; }
   const chosen = S.ui.kind;
   const kind = chosen === 'auto' ? classify(text) : chosen;
+  flyCapture(text, kind === 'task' ? 'oggi' : 'mente');
   S.ui.draft = ''; S.ui.capOpen = false; S.ui.kind = 'auto';
   stopListening();
   document.activeElement?.blur();
@@ -420,9 +475,14 @@ function taskWhen(x) {
 
 // ---------------------------------------------------------------- Pezzi di interfaccia
 function headHtml(date, title, extra = '') {
-  return `<div class="head ${isWide() ? 'wide' : ''}">
+  if (isWide()) return `<div class="head wide">
     <div><p class="h-date">${esc(date)}</p><h1 class="h-title">${esc(title)}</h1></div>
-    ${extra}${isWide() ? captureHtml() : ''}
+    ${extra}${captureHtml()}
+  </div>`;
+  // Telefono: sole/luna in alto a destra, in ogni sezione.
+  return `<div class="head">
+    <div><p class="h-date">${esc(date)}</p><h1 class="h-title">${esc(title)}</h1></div>
+    <div class="h-side">${themeBtnHtml()}${extra}</div>
   </div>`;
 }
 
@@ -465,6 +525,7 @@ function navHtml() {
     <div class="logo">${I.logo}</div>
     ${items.map((i) => `<button class="${S.view === i.id ? 'on' : ''}" data-action="go" data-id="${i.id}">${i.icon}${i.label}</button>`).join('')}
     <div class="spacer"></div>
+    ${themeBtnHtml('rail-theme')}
     <button data-action="logout" aria-label="Esci">${I.logout}Esci</button>
   </nav>
   <nav class="nav-bottom" aria-label="Sezioni" style="--i:${navPrevIdx < 0 ? BOTTOM.indexOf(bottomView) : navPrevIdx}">
@@ -1192,6 +1253,34 @@ const actions = {
   async month(id) { S.ui.monthOffset += Number(id); render(); await loadEvents(); render(); },
   monthToday() { S.ui.monthOffset = 0; S.ui.calSel = todayYmd(); render(); },
   calSel(id) { S.ui.calSel = id; render(); },
+  // Cambio tema con transizione: un cerchio che si allarga dal pulsante (View Transitions), altrimenti dissolvenza.
+  toggleTheme(_id, el) {
+    const goDark = !isDark();
+    const now = new Date();
+    const switchIt = () => {
+      // Se il nuovo tema coincide con quello automatico, niente override; altrimenti vale fino al prossimo tramonto/alba.
+      if (goDark === autoDark(now)) ls.set('themeOverride', null);
+      else ls.set('themeOverride', { theme: goDark ? 'dark' : 'light', until: nextSunChange(now) });
+      themeAnimUntil = Date.now() + 700;
+      applyTheme(); render();
+    };
+    const btn = el || document.querySelector('.theme-btn');
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (document.startViewTransition && !reduce && btn) {
+      const r = btn.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const end = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      const vt = document.startViewTransition(switchIt);
+      vt.ready.then(() => {
+        document.documentElement.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${end}px at ${x}px ${y}px)`] },
+          { duration: 520, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' });
+      }).catch(() => {});
+    } else {
+      document.documentElement.classList.add('theme-fade');
+      switchIt();
+      setTimeout(() => document.documentElement.classList.remove('theme-fade'), 450);
+    }
+  },
   // Dalla Mente alle task di oggi con un tocco.
   async toTodo(id) {
     const c = S.captures.find((x) => x.id === id); if (!c) return;
@@ -1342,7 +1431,7 @@ app.addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
   const fn = actions[el.dataset.action];
-  if (fn) { e.preventDefault(); fn(el.dataset.id); }
+  if (fn) { e.preventDefault(); fn(el.dataset.id, el); }
 });
 
 app.addEventListener('input', (e) => {
