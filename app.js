@@ -50,6 +50,7 @@ const I = {
   barbell: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h20"/><rect x="5" y="7" width="3" height="10" rx="1"/><rect x="16" y="7" width="3" height="10" rx="1"/><path d="M3.5 9.5v5M20.5 9.5v5"/></svg>',
   checkBig: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   refresh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></svg>',
+  gauge: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 18.5a9 9 0 1 1 15 0"/><path d="M12 14l4-5"/><circle cx="12" cy="14" r="1.6"/></svg>',
   logout: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
   logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><g transform="skewX(-12) translate(10 0)"><path d="M56 16 H72 V56 A26 26 0 0 1 20 56 H36 A10 10 0 0 0 56 56 Z" fill="#FFFFFF"/></g><path d="M10 76 L90 32" stroke="var(--logo-bg, #2E5BDB)" stroke-width="6.5"/></svg>'
 };
@@ -550,7 +551,7 @@ function trainingCardHtml(cls = '') {
       <p class="card-label push"><span>Fatto${a.distance_m ? ' · ' + kmLabel(a.distance_m) : ''}${today.length > 1 ? ` · +${today.length - 1}` : ''}</span></p>
       <p class="card-label"><span>${a.avg_hr ? `FC media ${a.avg_hr}` : ''}</span></p>`;
   } else if (h.readiness != null) {
-    body = `<p class="card-strong">Prontezza ${h.readiness}</p>
+    body = `<span class="act-head"><span class="act-icon run" aria-label="Prontezza">${I.gauge}</span><span class="card-strong">Prontezza ${h.readiness}</span></span>
       <p class="card-label"><span>${READY_IT[h.readiness_level] || ''}</span></p>
       <p class="card-label push"><span>Nessun allenamento oggi</span></p>`;
   } else if (garminLinked()) {
