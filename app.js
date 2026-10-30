@@ -958,22 +958,9 @@ async function notionSync(manual = false) {
 }
 
 // ---------------------------------------------------------------- Comandi Rapidi (iPhone)
-const INGEST_URL = 'https://ywebxcgltxvxgqptjuxk.supabase.co/functions/v1/expense-ingest';
-function shortcutCardHtml() {
-  const u = S.ui;
-  if (!u.scOpen) return `<button class="card tile-btn sc-teaser" data-action="scOpen">
-      <span class="act-head"><span class="act-icon run">${I.nfc}</span><span><span class="card-strong">Spese dall'iPhone</span><span class="tl-meta" style="display:block">Pagamento col telefono e "Ehi Siri, spesa"</span></span></span>
-    </button>`;
-  return `<div class="card sc-card">
-    <p class="card-label"><span>Spese dall'iPhone · Comandi Rapidi</span><button class="link" data-action="scOpen">Chiudi</button></p>
-    <p class="sc-p">Servono due dati da incollare nei Comandi Rapidi. Il codice personale si vede una volta sola: se lo perdi, ne crei uno nuovo.</p>
-    <div class="sc-field"><span class="stat-l">Indirizzo</span><code>${INGEST_URL}</code><button class="btn" data-action="copy" data-id="url">Copia</button></div>
-    <div class="sc-field"><span class="stat-l">Codice personale</span>
-      ${u.scToken ? `<code>${esc(u.scToken)}</code><button class="btn primary" data-action="copy" data-id="token">Copia</button>`
-        : `<button class="btn primary" data-action="newDeviceToken">Crea il codice</button>`}</div>
-    <div class="sc-field"><span class="stat-l">Categorie (da incollare nell'azione "Testo")</span><code>${CATEGORIES.join(' · ')}</code><button class="btn" data-action="copy" data-id="cats">Copia</button></div>
-  </div>`;
-}
+// Su iPhone/iPad "Aggiungi spesa" apre il comando rapido "Spesa"; sul computer resta il modulo dentro l'app.
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const SHORTCUT_URL = 'shortcuts://run-shortcut?name=' + encodeURIComponent('Spesa');
 
 function viewSpese() {
   const u = S.ui;
@@ -1044,7 +1031,6 @@ function viewSpese() {
       </div>`;
     }).join('') || '<p class="empty">Nessun movimento.</p>'}</div>
   </div>
-  ${shortcutCardHtml()}
   <div class="notion-row">${notionLine}
     <button class="btn" data-action="notionSync" ${ns.state === 'running' ? 'disabled' : ''}>${ns.state === 'off' ? 'Riprova' : 'Sincronizza con Notion'}</button></div>`;
 }
@@ -1176,7 +1162,11 @@ const actions = {
     if (error) fail(error); else toast('Spostato in Mente');
   },
   spMonth(id) { S.ui.spMonth = Math.min(0, S.ui.spMonth + Number(id)); render(); },
-  addExpense() { S.ui.adding = !S.ui.adding; if (S.ui.adding) focusLater('exAmount'); render(); },
+  addExpense() {
+    // Al ritorno nell'app la spesa compare da sola (ricarica su visibilitychange).
+    if (IS_IOS && !S.ui.adding) { location.href = SHORTCUT_URL; return; }
+    S.ui.adding = !S.ui.adding; if (S.ui.adding) focusLater('exAmount'); render();
+  },
   cancelExpense() { S.ui.adding = false; render(); },
   exCat(id) { S.ui.exCat = id; render(); },
   exMethod(id) { S.ui.exMethod = id; render(); },
@@ -1208,17 +1198,6 @@ const actions = {
     if (error) fail(error);
   },
   notionSync() { notionSync(true); },
-  scOpen() { S.ui.scOpen = !S.ui.scOpen; render(); },
-  async newDeviceToken() {
-    const { data, error } = await sb.rpc('create_device_token', { p_label: 'iPhone' });
-    if (error) { fail(error); return; }
-    S.ui.scToken = data; render();
-  },
-  async copy(id) {
-    const text = id === 'url' ? INGEST_URL : id === 'cats' ? CATEGORIES.join('\n') : S.ui.scToken;
-    try { await navigator.clipboard.writeText(text); toast(id === 'url' ? 'Indirizzo copiato' : id === 'cats' ? 'Categorie copiate' : 'Codice copiato'); }
-    catch { toast('Tieni premuto sul testo per copiarlo'); }
-  },
   budget() {
     const cur = ls.get('budget', 600);
     const v = prompt('Budget mensile in euro', String(cur));
