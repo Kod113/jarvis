@@ -18,8 +18,7 @@ const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti',
 const KINDS = [
   { id: 'task', label: 'Task' },
   { id: 'frase', label: 'Frase' },
-  { id: 'idea', label: 'Idea' },
-  { id: 'auto', label: 'Decide Jarvis' }
+  { id: 'idea', label: 'Idea' }
 ];
 const KIND_LABEL = { task: 'Task', studio: 'Idea', frase: 'Frase', idea: 'Idea', auto: 'Jarvis' };
 const DOW = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
@@ -429,7 +428,7 @@ function headHtml(date, title, extra = '') {
 
 function captureHtml() {
   const u = S.ui;
-  const kinds = u.capOpen ? `<div class="kinds"><p>Dove lo metto?</p><div class="chips">${KINDS.map((k) =>
+  const kinds = u.capOpen ? `<div class="kinds"><p>Dove lo metto? Se non scegli, decide Jarvis</p><div class="chips">${KINDS.map((k) =>
     `<button class="chip ${u.kind === k.id ? 'on' : ''}" data-action="kind" data-id="${k.id}">${k.label}</button>`).join('')}</div></div>` : '';
   const tst = u.toast && !isWide() ? toastHtml('') : '';
   return `<div class="capture-wrap">
@@ -1084,7 +1083,7 @@ function viewMente() {
   <div class="chips">${filters.map(([id, l]) => `<button class="chip ${u.mFilter === id ? 'on' : ''}" data-action="mFilter" data-id="${id}">${l}</button>`).join('')}</div>
   ${frase && (u.mFilter === 'tutto' || u.mFilter === 'frase') && !q ? `<div class="quote"><p class="m">Frase su cui riflettere</p><p class="q">${esc(frase.body)}</p><p class="m">Salvata ${dayLabel(ymd(new Date(frase.created_at)))}</p></div>` : ''}
   <div class="card">
-    <div class="list">${all.map((c) => `<div class="li"><div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}${c.status === 'inbox' ? ' · da smistare' : ''}</span></div><span class="tag ${c.kind}">${KIND_LABEL[c.kind]}</span></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un argomento o una frase dalla barra.</p>'}</div>
+    <div class="list">${all.map((c) => `<div class="li"><div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}${c.status === 'inbox' ? ' · da smistare' : ''}</span></div><span class="tag ${c.kind}">${KIND_LABEL[c.kind]}</span><button class="todo-btn" data-action="toTodo" data-id="${c.id}" aria-label="Sposta in To-do: ${esc(c.body)}">To-do</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un argomento o una frase dalla barra.</p>'}</div>
   </div>`;
 }
 
@@ -1142,7 +1141,8 @@ function render() {
 // ---------------------------------------------------------------- Azioni
 const actions = {
   go(id) { if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300); S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
-  kind(id) { S.ui.kind = id; focusLater('cap'); render(); },
+  // Un tag si seleziona e si deseleziona: senza tag decide Jarvis (smistamento automatico).
+  kind(id) { S.ui.kind = S.ui.kind === id ? 'auto' : id; focusLater('cap'); render(); },
   saveCapture() { saveCapture(); },
   mic() { if (S.ui.listening) { stopListening(); render(); } else startListening(); },
   toggleDay() { S.ui.showDay = !S.ui.showDay; render(); },
@@ -1192,6 +1192,18 @@ const actions = {
   async month(id) { S.ui.monthOffset += Number(id); render(); await loadEvents(); render(); },
   monthToday() { S.ui.monthOffset = 0; S.ui.calSel = todayYmd(); render(); },
   calSel(id) { S.ui.calSel = id; render(); },
+  // Dalla Mente alle task di oggi con un tocco.
+  async toTodo(id) {
+    const c = S.captures.find((x) => x.id === id); if (!c) return;
+    try {
+      const t = await addTask(cleanTaskTitle(c.body), { source: 'inbox' });
+      S.captures = S.captures.filter((x) => x.id !== id);
+      render();
+      toast('Spostato nelle task di oggi');
+      const { error } = await sb.from('captures').update({ status: 'planned', planned_task_id: t.id }).eq('id', id);
+      if (error) throw error;
+    } catch (err) { fail(err); }
+  },
   async planCapture(id) {
     const c = S.captures.find((x) => x.id === id); if (!c) return;
     const day = S.view === 'calendario' ? S.ui.calSel : S.ui.weekSel;
