@@ -829,7 +829,8 @@ function dayReading(M, day) {
 }
 // Pattern nel tempo: confronti tra gruppi di giorni, mostrati solo con abbastanza dati e una differenza sensata.
 function bodyPatterns(M) {
-  const days = [...M.H.keys()].sort();
+  // Solo i giorni con dati veri del Forerunner (lo storico più vecchio ha righe vuote).
+  const days = [...M.H.keys()].filter((d) => { const h = M.H.get(d); return h.sleep_minutes != null || h.hrv != null; }).sort();
   const pat = [];
   const pair = (label, a, b, key, min, fmt, text) => {
     const va = a.map((d) => M.H.get(d)?.[key]).filter((v) => v != null).map(Number);
