@@ -496,12 +496,12 @@ function taskWhen(x) {
 // ---------------------------------------------------------------- Pezzi di interfaccia
 function headHtml(date, title, extra = '') {
   if (isWide()) return `<div class="head wide">
-    <div><p class="h-date">${esc(date)}</p><h1 class="h-title">${esc(title)}</h1></div>
+    <div>${date ? `<p class="h-date">${esc(date)}</p>` : ""}<h1 class="h-title">${esc(title)}</h1></div>
     ${extra}${captureHtml()}${themeBtnHtml()}
   </div>`;
   // Sole/luna sempre per primo in alto a destra, in ogni sezione (sopra gli altri pulsanti).
   return `<div class="head">
-    <div><p class="h-date">${esc(date)}</p><h1 class="h-title">${esc(title)}</h1></div>
+    <div>${date ? `<p class="h-date">${esc(date)}</p>` : ""}<h1 class="h-title">${esc(title)}</h1></div>
     <div class="h-side">${themeBtnHtml()}${extra}</div>
   </div>`;
 }
@@ -569,6 +569,7 @@ function taskRowHtml(x) {
           : `<button class="task-title" data-action="editTask" data-id="${x.id}" title="Tocca per modificare">${esc(x.title)}</button>`}
         ${when && !editing ? `<span class="task-when">${esc(when)}</span>` : ''}
       </span>
+      <button class="icon-btn mind-btn" data-action="toMind" data-id="${x.id}" aria-label="Sposta nella Mente: ${esc(x.title)}" title="Sposta nella Mente">${I.mind}</button>
       <button class="icon-btn trash" data-action="deleteTask" data-id="${x.id}" aria-label="Elimina: ${esc(x.title)}">${I.trash}</button>
       <button class="icon-btn ${clockCls}" data-action="openSched" data-id="${x.id}" aria-label="Metti in calendario: ${esc(x.title)}">${I.clock}</button>
     </div>
@@ -1206,17 +1207,13 @@ function viewSpese() {
 
 function viewMente() {
   const u = S.ui;
-  const filters = [['tutto', 'Tutto'], ['idea', 'Idee'], ['frase', 'Frasi']];
-  if (u.mFilter === 'studio') u.mFilter = 'tutto';
   const q = u.mSearch.trim().toLowerCase();
-  const all = S.captures.filter((c) => c.kind !== 'task' && (u.mFilter === 'tutto' || c.kind === u.mFilter) && (!q || c.body.toLowerCase().includes(q)));
-  const frase = S.captures.find((c) => c.kind === 'frase');
-  return `${headHtml('Il tuo secondo cervello', 'Mente')}
-  <div class="search">${I.search}<label for="mSearch" class="sr-only">Cerca</label><input id="mSearch" data-model="mSearch" value="${esc(u.mSearch)}" placeholder="Cerca in argomenti, frasi, idee…"></div>
-  <div class="chips">${filters.map(([id, l]) => `<button class="chip ${u.mFilter === id ? 'on' : ''}" data-action="mFilter" data-id="${id}">${l}</button>`).join('')}</div>
-  ${frase && (u.mFilter === 'tutto' || u.mFilter === 'frase') && !q ? `<div class="quote"><p class="m">Frase su cui riflettere</p><p class="q">${esc(frase.body)}</p><p class="m">Salvata ${dayLabel(ymd(new Date(frase.created_at)))}</p></div>` : ''}
+  // Frasi e idee trattate allo stesso modo: sono pensieri, da tenere qui o spostare nei To-do.
+  const all = S.captures.filter((c) => c.kind !== 'task' && (!q || c.body.toLowerCase().includes(q)));
+  return `${headHtml('', 'Mente')}
+  <div class="search">${I.search}<label for="mSearch" class="sr-only">Cerca</label><input id="mSearch" data-model="mSearch" value="${esc(u.mSearch)}" placeholder="Cerca nei tuoi pensieri…"></div>
   <div class="card">
-    <div class="list">${all.map((c) => `<div class="li"><div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}${c.status === 'inbox' ? ' · da smistare' : ''}</span></div><span class="tag ${c.kind}">${KIND_LABEL[c.kind]}</span><button class="todo-btn" data-action="toTodo" data-id="${c.id}" aria-label="Sposta in To-do: ${esc(c.body)}">To-do</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un argomento o una frase dalla barra.</p>'}</div>
+    <div class="list">${all.map((c) => `<div class="li"><div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}${c.status === 'inbox' ? ' · da smistare' : ''}</span></div><button class="todo-btn" data-action="toTodo" data-id="${c.id}" aria-label="Sposta in To-do: ${esc(c.body)}">To-do</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un pensiero dalla barra.</p>'}</div>
   </div>`;
 }
 
@@ -1360,6 +1357,24 @@ const actions = {
       switchIt();
       setTimeout(() => document.documentElement.classList.remove('theme-fade'), 450);
     }
+  },
+  // Da task di oggi alla Mente (il contrario di "To-do").
+  async toMind(id) {
+    const t = S.tasks.find((x) => x.id === id); if (!t) return;
+    S.tasks = S.tasks.filter((x) => x.id !== id);
+    if (S.ui.schedId === id) S.ui.schedId = null;
+    render();
+    try {
+      const { data, error } = await sb.from('captures').insert({ body: t.title, kind: 'idea', status: 'archived' }).select().single();
+      if (error) throw error;
+      S.captures.unshift(data);
+      toast('Spostata nella Mente');
+      if (t.gcal_event_id && S.gcal.connected) {
+        try { await sb.from('tasks').update({ due_time: null }).eq('id', id); await gcal('syncTask', { taskId: id }); } catch (err) { console.warn(err); }
+      }
+      const { error: e2 } = await sb.from('tasks').delete().eq('id', id);
+      if (e2) throw e2;
+    } catch (err) { S.tasks.push(t); render(); fail(err); }
   },
   // Dalla Mente alle task di oggi con un tocco.
   async toTodo(id) {
