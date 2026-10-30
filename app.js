@@ -645,7 +645,7 @@ function trainingCardHtml(cls = '') {
       <p class="card-label"><span>${a.avg_hr ? `FC media ${a.avg_hr}` : ''}</span></p>`;
   } else if (garminLinked()) {
     // Nessun allenamento oggi: "Riposo" (la prontezza è già nella scheda Corpo).
-    body = '<p class="card-strong">Riposo</p><p class="card-label push"><span>Nessun allenamento oggi</span></p>';
+    body = '<p class="card-strong rest-big">Riposo</p><p class="card-label push"><span>Nessun allenamento oggi</span></p>';
   } else {
     body = '<p class="card-strong">Garmin</p><p class="card-label push"><span>Da collegare</span></p>';
   }

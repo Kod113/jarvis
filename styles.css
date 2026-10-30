@@ -412,3 +412,6 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 @keyframes cap-pulse { 0% { box-shadow: var(--shadow), 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 100% { box-shadow: var(--shadow), 0 0 0 14px transparent; } }
 .capture.sent { animation: cap-pulse .5s ease-out; }
 @media (prefers-reduced-motion: reduce) { .bump, .capture.sent { animation: none; } }
+
+/* Scheda Allenamento nei giorni senza allenamento. */
+.card-strong.rest-big { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-top: 6px; }
