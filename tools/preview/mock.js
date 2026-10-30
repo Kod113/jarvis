@@ -19,7 +19,7 @@ const db = {
     { id:'e2', amount:50, description:'Benzina', category:'Auto', method:'nfc', spent_at:new Date(Date.now()-3*864e5).toISOString() },
     { id:'e3', amount:10.99, description:'Spotify', category:'Abbonamenti', method:'manual', spent_at:new Date(Date.now()-864e5).toISOString() },
   ],
-  health_daily: [0,1,2,3,4,5,6].map(i => ({ day: add(-i), sleep_minutes: 380 + i*9 % 60, sleep_score: 70 + (i*7)%20, resting_hr: 50 + (i*3)%6, hrv: 42 + (i*5)%14, hrv_status: 'BALANCED', body_battery_wake: 60 + (i*11)%35, readiness: 55 + (i*9)%40, readiness_level: 'MODERATE', steps: 6000 + i*900 })),
+  health_daily: [0,1,2,3,4,5,6].map(i => ({ day: add(-i), sleep_minutes: 380 + i*9 % 60, deep_min: 80, light_min: 250, rem_min: 100, awake_min: 15, sleep_score: 70 + (i*7)%20, resting_hr: 50 + (i*3)%6, hrv: 42 + (i*5)%14, hrv_status: 'BALANCED', body_battery_wake: 60 + (i*11)%35, readiness: 55 + (i*9)%40, readiness_level: 'MODERATE', steps: 6000 + i*900 })),
   activities: [
     { id: 11, day: ymd(today), start_time: new Date().toISOString(), type: 'running', name: 'Roma Corsa', duration_s: 2460, distance_m: 6200, avg_hr: 141, aerobic_te: 2.8, training_load: 62, zones_s: [120, 1500, 600, 200, 0] },
     { id: 12, day: add(-2), start_time: new Date(Date.now()-2*864e5).toISOString(), type: 'strength_training', name: 'Forza', duration_s: 1800, avg_hr: 112, training_load: 35, zones_s: [900, 600, 100, 0, 0] },

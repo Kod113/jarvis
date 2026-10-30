@@ -51,6 +51,9 @@ const I = {
   checkBig: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   refresh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></svg>',
   gauge: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 18.5a9 9 0 1 1 15 0"/><path d="M12 14l4-5"/><circle cx="12" cy="14" r="1.6"/></svg>',
+  trash: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  heartFill: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
+  battery: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M21 10.5v3M6.5 10v4M10 10v4M13.5 10v4"/></svg>',
   logout: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/></svg>',
   logo: '<svg width="44" height="44" viewBox="0 0 100 100" role="img" aria-label="Jarvis"><rect width="100" height="100" rx="23" fill="var(--logo-bg, #2E5BDB)"/><g transform="skewX(-12) translate(10 0)"><path d="M56 16 H72 V56 A26 26 0 0 1 20 56 H36 A10 10 0 0 0 56 56 Z" fill="#FFFFFF"/></g><path d="M10 76 L90 32" stroke="var(--logo-bg, #2E5BDB)" stroke-width="6.5"/></svg>'
 };
@@ -134,6 +137,7 @@ const S = {
     monthOffset: 0, calSel: todayYmd(),
     spMonth: 0, adding: false, exAmount: '', exDesc: '', exCat: 'Cibo', exMethod: 'manual',
     mFilter: 'tutto', mSearch: '',
+    editId: null, editText: '',
     loginErr: '', loginBusy: false
   }
 };
@@ -141,12 +145,15 @@ const wideMq = window.matchMedia('(min-width: 1000px)');
 const isWide = () => wideMq.matches;
 
 let toastTimer = null;
-function toast(msg) {
+let toastUndo = null;
+function toast(msg, undo = null) {
   S.ui.toast = msg;
+  toastUndo = undo;
   render();
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { S.ui.toast = ''; render(); }, 2800);
+  toastTimer = setTimeout(() => { S.ui.toast = ''; toastUndo = null; render(); }, undo ? 4500 : 2800);
 }
+const toastHtml = (cls) => `<p class="toast ${cls}" role="status">${esc(S.ui.toast)}${toastUndo ? ' <button class="toast-undo" data-action="undo">Annulla</button>' : ''}</p>`;
 function fail(err) {
   console.error(err);
   toast('Errore: ' + (err?.message || 'qualcosa è andato storto'));
@@ -415,7 +422,7 @@ function captureHtml() {
   const u = S.ui;
   const kinds = u.capOpen ? `<div class="kinds"><p>Dove lo metto?</p><div class="chips">${KINDS.map((k) =>
     `<button class="chip ${u.kind === k.id ? 'on' : ''}" data-action="kind" data-id="${k.id}">${k.label}</button>`).join('')}</div></div>` : '';
-  const tst = u.toast && !isWide() ? `<p class="toast" role="status">${esc(u.toast)}</p>` : '';
+  const tst = u.toast && !isWide() ? toastHtml('') : '';
   return `<div class="capture-wrap">
     ${isWide() ? '' : tst}${isWide() ? '' : kinds}
     <div class="capture">
@@ -456,12 +463,17 @@ function taskRowHtml(x) {
   const when = taskWhen(x);
   const open = S.ui.schedId === x.id;
   const clockCls = open ? 'open' : (x.due_time || moved ? 'set' : '');
+  const editing = S.ui.editId === x.id;
   return `<div class="task ${x.done ? 'done' : ''} ${moved ? 'moved' : ''}">
     <div class="task-line">
-      <button class="task-main" data-action="toggleTask" data-id="${x.id}" aria-pressed="${x.done}">
-        <span class="check">${x.done ? I.check : ''}</span>
-        <span class="task-text"><span class="task-title">${esc(x.title)}</span>${when ? `<span class="task-when">${esc(when)}</span>` : ''}</span>
-      </button>
+      <button class="check-btn" data-action="toggleTask" data-id="${x.id}" aria-pressed="${x.done}" aria-label="${x.done ? 'Segna da fare' : 'Segna fatta'}: ${esc(x.title)}"><span class="check">${x.done ? I.check : ''}</span></button>
+      <span class="task-text">
+        ${editing
+          ? `<label for="edit-${x.id}" class="sr-only">Modifica task</label><input id="edit-${x.id}" class="task-edit" data-model="editText" data-edit="${x.id}" value="${esc(S.ui.editText)}" enterkeyhint="done" autocomplete="off">`
+          : `<button class="task-title" data-action="editTask" data-id="${x.id}" title="Tocca per modificare">${esc(x.title)}</button>`}
+        ${when && !editing ? `<span class="task-when">${esc(when)}</span>` : ''}
+      </span>
+      <button class="icon-btn trash" data-action="deleteTask" data-id="${x.id}" aria-label="Elimina: ${esc(x.title)}">${I.trash}</button>
       <button class="icon-btn ${clockCls}" data-action="openSched" data-id="${x.id}" aria-label="Metti in calendario: ${esc(x.title)}">${I.clock}</button>
     </div>
     ${open ? schedHtml() : ''}
@@ -563,28 +575,53 @@ function trainingCardHtml(cls = '') {
     <span class="card-label"><span>Allenamento</span></span>${body}</button>`;
 }
 
+const SLEEP_Q = (sc) => (sc >= 90 ? 'Ottimo' : sc >= 80 ? 'Buono' : sc >= 60 ? 'Discreto' : 'Scarso');
+function avgOf(key) {
+  const vals = (S.healthDays || []).filter((d) => d.day !== todayYmd() && d[key] != null).slice(0, 30).map((d) => d[key]);
+  return vals.length >= 3 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+function vsAvg(key, val, higherIsGood) {
+  const a = avgOf(key);
+  if (a == null || val == null) return '';
+  const d = Math.round(val - a);
+  if (d === 0) return '<span class="trend">in media</span>';
+  const good = higherIsGood ? d > 0 : d < 0;
+  return `<span class="trend ${good ? 'good' : 'bad'}">${d > 0 ? '+' : '−'}${Math.abs(d)} media</span>`;
+}
+function metricRow(kind, icon, label, val, unit, trend) {
+  return `<div class="m-row"><span class="m-icon ${kind}">${icon}</span><span class="m-label">${label}</span>
+    <span class="m-val">${val ?? '—'}${val != null && unit ? `<small>${unit}</small>` : ''}</span>${trend || '<span class="trend"></span>'}</div>`;
+}
 function bodyCardHtml(cls = 'span2') {
   const h = S.health || {};
   const running = S.garminSync === 'running';
-  const missingSleep = garminLinked() && !h.sleep_minutes && new Date().getHours() >= 4;
+  const linked = garminLinked();
+  const hasSleep = !!h.sleep_minutes;
   const note = running ? 'Aggiorno i dati del Garmin…'
-    : missingSleep && S.garminSync === 'done' ? 'Il sonno di stanotte non è ancora su Garmin: apri Garmin Connect per sincronizzare l\'orologio, poi aggiorna.'
-    : missingSleep ? 'Il sonno di stanotte non è ancora arrivato.' : '';
-  return `<div class="card ${cls}">
+    : linked && !hasSleep && S.garminSync === 'done' ? 'Garmin non ha ancora il sonno di stanotte: apri Garmin Connect per sincronizzare l\'orologio, poi aggiorna.' : '';
+  const st = [['deep', h.deep_min, 'Profondo'], ['light', h.light_min, 'Leggero'], ['rem', h.rem_min, 'REM'], ['awake', h.awake_min, 'Sveglio']].filter((x) => x[1]);
+  const stages = st.length ? `<div class="stage-bar" aria-hidden="true">${st.map(([k, m]) => `<span class="st-${k}" style="flex:${m}"></span>`).join('')}</div>
+    <div class="stage-legend">${st.filter(([k]) => k !== 'awake').map(([k, m, l]) => `<span><i class="st-${k}"></i>${l} ${sleepLabel(m)}</span>`).join('')}</div>` : '';
+  const rl = h.readiness_level;
+  const readyTrend = rl ? `<span class="trend ${['PRIME', 'HIGH'].includes(rl) ? 'good' : ['LOW', 'POOR'].includes(rl) ? 'bad' : ''}">${READY_IT[rl] || ''}</span>` : '';
+  return `<div class="card body-card ${cls}">
     <div class="card-label"><span>Corpo</span>
       <span class="card-actions">
-        ${garminLinked() ? `<button class="mini-btn ${running ? 'spin' : ''}" data-action="garminRefresh" aria-label="Aggiorna dati Garmin" ${running ? 'disabled' : ''}>${I.refresh}</button>
+        ${linked ? `<button class="mini-btn ${running ? 'spin' : ''}" data-action="garminRefresh" aria-label="Aggiorna dati Garmin" ${running ? 'disabled' : ''}>${I.refresh}</button>
         <button class="link" data-action="go" data-id="corpo">Vedi settimana →</button>` : '<span>Garmin da collegare</span>'}
       </span>
     </div>
-    <button class="stats3 tile-btn plain" data-action="go" data-id="corpo" aria-label="Apri la sezione Corpo">
-      <span><span class="stat-l">Sonno</span><span class="stat-v">${sleepLabel(h.sleep_minutes)}${h.sleep_score ? `<small> · ${h.sleep_score}</small>` : ''}</span></span>
-      <span><span class="stat-l">FC riposo</span><span class="stat-v">${h.resting_hr ?? '—'}</span></span>
-      <span><span class="stat-l">HRV</span><span class="stat-v">${h.hrv ?? '—'}</span></span>
-      <span><span class="stat-l">Body Battery</span><span class="stat-v">${h.body_battery_wake ?? h.body_battery_high ?? '—'}</span></span>
-      <span><span class="stat-l">Prontezza</span><span class="stat-v">${h.readiness ?? '—'}</span></span>
-      <span><span class="stat-l">Passi</span><span class="stat-v">${h.steps != null ? h.steps.toLocaleString('it-IT') : '—'}</span></span>
+    <button class="tile-btn plain sleep-hero" data-action="go" data-id="corpo" aria-label="Apri la sezione Corpo">
+      ${hasSleep ? `<span class="sleep-top"><span><span class="stat-l">Stanotte hai dormito</span><span class="sleep-big">${sleepLabel(h.sleep_minutes)}</span></span>
+        ${h.sleep_score ? `<span class="pill-badge">Punteggio ${h.sleep_score} · ${SLEEP_Q(h.sleep_score)}</span>` : ''}</span>${stages}`
+      : `<span class="stat-l">Stanotte</span><span class="card-strong">${linked ? 'Il sonno non è ancora arrivato' : 'Collega Garmin per vedere il sonno'}</span>`}
     </button>
+    <div class="m-list">
+      ${metricRow('heart', I.heartFill, 'FC a riposo', h.resting_hr, ' bpm', vsAvg('resting_hr', h.resting_hr, false))}
+      ${metricRow('wave', I.heart, 'HRV notturna', h.hrv, ' ms', vsAvg('hrv', h.hrv, true))}
+      ${metricRow('batt', I.battery, 'Body Battery', h.body_battery_wake ?? h.body_battery_high, '', vsAvg('body_battery_wake', h.body_battery_wake, true))}
+      ${metricRow('gauge', I.gauge, 'Prontezza', h.readiness, '', readyTrend)}
+    </div>
     ${note ? `<p class="sync-note">${note}</p>` : ''}
   </div>`;
 }
@@ -953,7 +990,7 @@ function render() {
   const sel = active && 'selectionStart' in active ? [active.selectionStart, active.selectionEnd] : null;
   const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente, corpo: viewCorpo };
   const body = (views[S.view] || viewOggi)();
-  const floatToast = S.ui.toast && isWide() ? `<p class="toast float" role="status">${esc(S.ui.toast)}</p>` : '';
+  const floatToast = S.ui.toast && isWide() ? toastHtml('float') : '';
   app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() ? '' : captureHtml()}${floatToast}</div>`;
   if (keepId) {
     const el = document.getElementById(keepId);
@@ -1070,6 +1107,27 @@ const actions = {
     if (n > 0) { ls.set('budget', n); render(); }
   },
   mFilter(id) { S.ui.mFilter = id; render(); },
+  editTask(id) {
+    const t = S.tasks.find((x) => x.id === id); if (!t) return;
+    S.ui.editId = id; S.ui.editText = t.title; focusLater('edit-' + id); render();
+  },
+  deleteTask(id) {
+    const i = S.tasks.findIndex((x) => x.id === id); if (i < 0) return;
+    const t = S.tasks[i];
+    S.tasks.splice(i, 1);
+    if (S.ui.schedId === id) S.ui.schedId = null;
+    let undone = false;
+    toast('Task eliminata', () => { undone = true; S.tasks.splice(i, 0, t); render(); });
+    setTimeout(async () => {
+      if (undone) return;
+      if (t.gcal_event_id && S.gcal.connected) {
+        try { await sb.from('tasks').update({ due_time: null }).eq('id', id); await gcal('syncTask', { taskId: id }); } catch (err) { console.warn(err); }
+      }
+      const { error } = await sb.from('tasks').delete().eq('id', id);
+      if (error) { S.tasks.splice(i, 0, t); fail(error); }
+    }, 4600);
+  },
+  undo() { const f = toastUndo; toastUndo = null; S.ui.toast = ''; clearTimeout(toastTimer); if (f) f(); render(); },
   garminRefresh() { refreshGarmin(true); },
   corpoWeek(id) { S.ui.corpoWeek = Math.min(0, (S.ui.corpoWeek || 0) + Number(id)); render(); },
   async logout() { await sb.auth.signOut(); },
@@ -1102,14 +1160,30 @@ app.addEventListener('input', (e) => {
   if (key === 'schedDay' || key === 'schedTime') render();
 });
 
+app.addEventListener('focusout', (e) => {
+  const id = e.target.dataset?.edit;
+  if (id && S.ui.editId === id) saveTaskEdit(id);
+});
+
+async function saveTaskEdit(id) {
+  const t = S.tasks.find((x) => x.id === id);
+  const title = S.ui.editText.trim();
+  S.ui.editId = null;
+  if (!t || !title || title === t.title) { render(); return; }
+  await updateTask(id, { title });
+  if (t.gcal_event_id) syncTask(id);
+}
+
 app.addEventListener('focusin', (e) => {
   if (e.target.id === 'cap' && !S.ui.capOpen) { S.ui.capOpen = true; render(); }
 });
 
 app.addEventListener('keydown', async (e) => {
   if (e.key === 'Escape' && S.ui.capOpen) { S.ui.capOpen = false; stopListening(); document.activeElement?.blur(); render(); return; }
+  if (e.target.dataset?.edit && e.key === 'Escape') { S.ui.editId = null; render(); return; }
   if (e.key !== 'Enter' || e.isComposing) return;
   const id = e.target.id;
+  if (e.target.dataset?.edit) { e.preventDefault(); e.target.blur(); return; }
   if (id === 'cap') { e.preventDefault(); saveCapture(); }
   if (id === 'newTask') {
     e.preventDefault();
