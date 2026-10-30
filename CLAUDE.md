@@ -36,7 +36,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   automazione Wallet "Transazione" (Per cosa? → Categoria?) e scorciatoia "Spesa manuale" (Quanto? → Per cosa? → Categoria?).
   Su iPhone/iPad il pulsante "Aggiungi spesa" apre il comando "Spesa manuale" (`shortcuts://run-shortcut?name=Spesa%20manuale`); sul computer apre il modulo nell'app.
   Tetti mensili per categoria: `CAT_CAP` in app.js (solo Benza, Cibo, Spesa, Shopping, Fun, Yugi, Abbonamenti, Formazione; le altre senza tetto).
-  Budget del mese = somma dei tetti, modificabile per singolo mese (localStorage `budget:YYYY-MM`). Categorie Università, Svapo, Giorgia tolte (restano nello storico).
+  Budget del mese = somma dei tetti, modificabile per singolo mese (localStorage `budget:YYYY-MM`). Categorie Università, Svapo, Giorgia tolte (restano nello storico; tolte anche dalle opzioni di Notion da Novembre 2026, i mesi nuovi copiano le opzioni dall'ultimo).
   Movimenti: icona della categoria (`CAT_PATHS` in app.js), riquadro blu = Apple Pay, verde = entrata.
   Entrate: categoria "Entrate" (o `direction: "in"`). Ogni risposta di `expense-ingest` ha `message`, mostrato nella notifica del comando.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
@@ -47,6 +47,8 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - Palette "Grafite e blu", token CSS in `:root` e `:root[data-theme="dark"]`. Tema scuro automatico da tramonto ad alba (Roma), `applyTheme()`.
   Pulsante sole/luna (`themeBtnHtml`, azione `toggleTheme`): sempre per primo in alto a destra (telefono e computer); forza il tema
   fino al prossimo tramonto/alba (`themeOverride` in localStorage), transizione a cerchio con View Transitions.
+- Giornata (pannello del Calendario e Settimana): vista a blocchi di tempo `dayBlocksHtml` (altezza = durata, colonne per sovrapposizioni,
+  fasce "Libero · durata" tra gli impegni da 30' in su, linea rossa dell'ora attuale). Colori `evTone`: azzurro personale, viola Famiglia, verde Famiglia con David.
 - Layout Bento su telefono (barra in basso: Oggi · Settimana · Spese · Mente), su computer barra laterale + Calendario a pagina intera (≥1000px).
 - Icona: J corsiva bianca tagliata (stile "J1") su blu di giorno, su grafite di sera.
 - Allenamenti: corsa = icona omino (azzurro), tutto il resto = "Forza" con icona bilanciere (scelta di David).

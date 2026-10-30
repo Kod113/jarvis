@@ -434,3 +434,24 @@ html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
 @keyframes task-glow { 0% { background: color-mix(in srgb, var(--accent) 18%, transparent); } 100% { background: transparent; } }
 @keyframes task-pop { 0% { transform: scale(.4); border-color: var(--accent); } 60% { transform: scale(1.18); border-color: var(--accent); } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .task.is-new, .task.is-new .task-line, .task.is-new .check { animation: none; } }
+
+/* Giornata a blocchi di tempo */
+.tb { position: relative; margin: 6px 0 4px; }
+.tb-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--line-2); }
+.tb-hour span { position: absolute; left: 0; top: -7px; font: 11px/1 'Geist Mono', monospace; color: var(--muted); background: var(--card); padding-right: 6px; }
+.tb-lane { position: absolute; left: 30px; right: 0; top: 0; bottom: 0; }
+.tb-ev { position: absolute; box-sizing: border-box; border-radius: 8px; padding: 4px 8px; overflow: hidden; display: flex; flex-direction: column; gap: 1px;
+  background: color-mix(in srgb, var(--ev) 22%, var(--card)); box-shadow: inset 3px 0 0 var(--ev); z-index: 1; }
+.tb-ev.short { flex-direction: row; align-items: center; gap: 6px; padding-top: 0; padding-bottom: 0; }
+.tb-t { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tb-m { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-ev.short .tb-t { flex: 0 0 auto; max-width: 70%; } .tb-ev.short .tb-m { flex: 1 1 0; min-width: 0; }
+.c-task { --ev: var(--ink); }
+.tb-ev.done { opacity: .5; } .tb-ev.done .tb-t { text-decoration: line-through; }
+.tb-gap { position: absolute; left: 0; right: 0; display: flex; align-items: center; justify-content: center; border-radius: 8px;
+  background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--muted) 8%, transparent) 6px 12px); }
+.tb-gap span { font-size: 11px; color: var(--muted); background: var(--card); padding: 1px 8px; border-radius: 99px; border: 1px dashed var(--line); }
+.tb-now { position: absolute; left: -4px; right: 0; height: 2px; background: #e5484d; z-index: 2; }
+.tb-now::before { content: ''; position: absolute; left: -3px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; }
+.tb-allday { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tb-chip { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: color-mix(in srgb, var(--ev) 22%, var(--card)); }

@@ -18,7 +18,7 @@ const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti',
   'Regali', 'Home', 'Lavanderia', 'Burocrazie', 'Yugi', 'Investimenti'];
 // Tetto mensile per categoria (mese finanziario 27→26). Solo queste hanno un tetto; le altre (spese saltuarie,
 // Investimenti, categorie vecchie) no. Abbonamenti e Formazione = importi ricorrenti degli ultimi mesi su Notion.
-const CAT_CAP = { Benza: 130, Cibo: 130, Spesa: 70, Shopping: 50, Fun: 50, Yugi: 50, Abbonamenti: 46.93, Formazione: 188.75 };
+const CAT_CAP = { Benza: 130, Cibo: 130, Spesa: 70, Shopping: 50, Fun: 50, Yugi: 50, Abbonamenti: 40.94, Formazione: 89 };
 const capOf = (c) => CAT_CAP[c] ?? null;
 // Budget del mese = somma dei tetti; modificabile per un singolo mese (ls 'budget:YYYY-MM').
 const CAPS_TOTAL = Math.round(Object.values(CAT_CAP).reduce((a, v) => a + v, 0) * 100) / 100;
@@ -853,9 +853,61 @@ function dayPanelHtml(day) {
   return `<div class="card">
     <p class="card-label"><span>${sub}</span></p>
     <h2 style="margin:0;font-size:18px;font-weight:600">${longDate(d)}</h2>
-    ${evs.length ? eventListHtml(evs) : ''}
+    ${evs.length || list.some((x) => x.due_time) ? dayBlocksHtml(day, evs, list) : ''}
     ${list.length ? `<div>${list.map(taskRowHtml).join('')}</div>` : ''}
     ${!list.length && !evs.length ? '<p class="empty">Giornata libera.</p>' : ''}
+  </div>`;
+}
+
+// Vista a blocchi di tempo: altezza = durata, così si vedono gli spazi liberi tra un impegno e l'altro.
+const PPH = 46; // pixel per ora
+const toMin = (d) => d.getHours() * 60 + d.getMinutes();
+const durText = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? pad(m % 60) : ''}` : `${m}'`);
+function dayBlocksHtml(day, evs, tasks = []) {
+  const allDay = evs.filter((e) => e.allDay);
+  const items = evs.filter((e) => !e.allDay).map((e) => {
+    const st = new Date(e.start), en = new Date(e.end);
+    const a = toMin(st);
+    const b = ymd(en) > day ? 24 * 60 : Math.max(a + 15, toMin(en)); // oltre mezzanotte: fino a fine giornata
+    return { a, b, title: e.title, tone: evTone(e), meta: `${evTime(e)} – ${evEnd(e)}`, sub: e.calName };
+  });
+  tasks.filter((x) => x.due_time).forEach((x) => {
+    const [h, m] = hhmm(x.due_time).split(':').map(Number); const a = h * 60 + m;
+    items.push({ a, b: Math.min(a + 30, 24 * 60), title: x.title, tone: 'c-task' + (x.done ? ' done' : ''), meta: `${hhmm(x.due_time)} · task`, sub: '' });
+  });
+  const chips = allDay.length ? `<div class="tb-allday">${allDay.map((e) => `<span class="tb-chip ${evTone(e)}">${esc(e.title)}</span>`).join('')}</div>` : '';
+  if (!items.length) return chips;
+  items.sort((x, y) => x.a - y.a || y.b - x.b);
+  // Colonne per gli eventi sovrapposti (per gruppi che si toccano).
+  let group = [], groupEnd = -1;
+  const flush = () => { const n = Math.max(...group.map((g) => g.col)) + 1; group.forEach((g) => { g.n = n; }); group = []; };
+  items.forEach((it) => {
+    if (group.length && it.a >= groupEnd) flush();
+    const cols = []; group.forEach((g) => { if (g.b > it.a) cols[g.col] = true; });
+    let c = 0; while (cols[c]) c++;
+    it.col = c; group.push(it); groupEnd = Math.max(groupEnd, it.b);
+  });
+  if (group.length) flush();
+  const h0 = Math.min(8, Math.floor(items[0].a / 60));
+  const h1 = Math.max(22, Math.ceil(Math.max(...items.map((i) => i.b)) / 60));
+  const y = (m) => ((m - h0 * 60) / 60) * PPH;
+  // Spazi liberi tra un impegno e l'altro (da 30 minuti in su).
+  const gaps = []; let end = items[0].b;
+  items.forEach((it) => { if (it.a - end >= 30) gaps.push([end, it.a]); end = Math.max(end, it.b); });
+  const hours = []; for (let h = h0; h <= h1; h++) hours.push(`<div class="tb-hour" style="top:${y(h * 60)}px"><span>${pad(h % 24)}</span></div>`);
+  const now = new Date(); const nm = toMin(now);
+  const nowLine = day === todayYmd() && nm >= h0 * 60 && nm <= h1 * 60 ? `<div class="tb-now" style="top:${y(nm)}px"></div>` : '';
+  return `${chips}<div class="tb" style="height:${(h1 - h0) * PPH}px">
+    ${hours.join('')}
+    <div class="tb-lane">
+      ${gaps.map(([a, b]) => `<div class="tb-gap" style="top:${y(a)}px;height:${y(b) - y(a)}px"><span>Libero · ${durText(b - a)}</span></div>`).join('')}
+      ${items.map((it) => {
+        const h = Math.max(20, y(it.b) - y(it.a) - 2);
+        return `<div class="tb-ev ${it.tone} ${h < 34 ? 'short' : ''}" style="top:${y(it.a) + 1}px;height:${h}px;left:calc(${(it.col / it.n) * 100}% + 2px);width:calc(${100 / it.n}% - 4px)" title="${esc(it.title)} · ${esc(it.meta)}">
+          <span class="tb-t">${esc(it.title)}</span><span class="tb-m">${esc(it.meta)}${it.sub ? ' · ' + esc(it.sub) : ''}</span></div>`;
+      }).join('')}
+      ${nowLine}
+    </div>
   </div>`;
 }
 
@@ -974,7 +1026,7 @@ function viewSettimana() {
   <div class="week-strip">${strip}</div>
   <div class="card">
     <p class="card-label"><span>${longDate(sel)}</span><span>${list.length + dayEvs.length} ${list.length + dayEvs.length === 1 ? 'cosa' : 'cose'}</span></p>
-    ${dayEvs.length ? eventListHtml(dayEvs) : ''}
+    ${dayEvs.length || list.some((x) => x.due_time) ? dayBlocksHtml(u.weekSel, dayEvs, list) : ''}
     ${list.map(taskRowHtml).join('')}
     ${!list.length && !dayEvs.length ? '<p class="empty">Niente in programma.</p>' : ''}
   </div>
