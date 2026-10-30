@@ -415,3 +415,7 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 
 /* Scheda Allenamento nei giorni senza allenamento. */
 .card-strong.rest-big { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-top: 6px; }
+
+/* Niente zoom su telefono: niente doppio tocco per ingrandire, e campi a 16px (sotto, iOS ingrandisce quando li tocchi). */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+@media (max-width: 999px) { input, textarea, select { font-size: 16px !important; } }

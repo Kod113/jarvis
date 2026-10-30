@@ -1462,6 +1462,10 @@ async function saveTaskEdit(id) {
   if (t.gcal_event_id) syncTask(id);
 }
 
+// Niente zoom col pizzico su iPhone (Safari ignora user-scalable=no): blocchiamo il gesto.
+['gesturestart', 'gesturechange'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', (e) => { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
 // Telefono: tocco fuori dalla barra di cattura mentre scrivi → salva (se c'è testo) e chiude la tastiera.
 // I tag, l'invio e il microfono stanno dentro la barra, quindi toccarli non salva.
 document.addEventListener('pointerdown', (e) => {

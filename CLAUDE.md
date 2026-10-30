@@ -53,6 +53,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   toccando fuori dalla barra mentre scrivi salva e chiude la tastiera (tag, invio e microfono non salvano).
 - Spunti: tag Task, Frase, Idea; senza tag decide Jarvis (nessun pulsante, i tag si deselezionano). Nella Mente ogni voce ha "To-do"
   (azione `toTodo`) che la trasforma in task di oggi. ("Da studiare" tolto su richiesta di David: confluisce in Idea; `studio` resta solo per dati vecchi).
+- Zoom disattivato su telefono (viewport, `touch-action: manipulation`, blocco gesture iOS, campi a 16px) per non rompere le animazioni.
 - Cache: `index.html` carica `styles.css?v=…` e `app.js?v=…`: aggiorna la versione a ogni modifica del frontend, sennò l'iPhone resta sulla vecchia.
 - Testi in italiano. Font Geist / Geist Mono.
 
