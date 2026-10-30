@@ -1462,6 +1462,16 @@ async function saveTaskEdit(id) {
   if (t.gcal_event_id) syncTask(id);
 }
 
+// Telefono: tocco fuori dalla barra di cattura mentre scrivi → salva (se c'è testo) e chiude la tastiera.
+// I tag, l'invio e il microfono stanno dentro la barra, quindi toccarli non salva.
+document.addEventListener('pointerdown', (e) => {
+  if (isWide() || !S.ui.capOpen || e.target.closest('.capture-wrap')) return;
+  if (S.ui.draft.trim()) { saveCapture(); return; }
+  S.ui.capOpen = false; S.ui.kind = 'auto'; stopListening();
+  document.activeElement?.blur();
+  render();
+}, true);
+
 app.addEventListener('focusin', (e) => {
   if (e.target.id === 'cap' && !S.ui.capOpen) { S.ui.capOpen = true; render(); }
 });
