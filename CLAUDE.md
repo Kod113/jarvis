@@ -35,6 +35,8 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   description, category, method (nfc/manual/online). Dopo l'inserimento chiama `notion-sync`. Due Comandi Rapidi costruiti a mano da David:
   automazione Wallet "Transazione" (Per cosa? → Categoria?) e scorciatoia "Spesa manuale" (Quanto? → Per cosa? → Categoria?).
   Su iPhone/iPad il pulsante "Aggiungi spesa" apre il comando "Spesa manuale" (`shortcuts://run-shortcut?name=Spesa%20manuale`); sul computer apre il modulo nell'app.
+  Tetti mensili per categoria: `CAT_CAP` in app.js (solo Benza, Cibo, Spesa, Shopping, Fun, Yugi, Abbonamenti, Formazione; le altre senza tetto).
+  Budget del mese = somma dei tetti, modificabile per singolo mese (localStorage `budget:YYYY-MM`). Categorie Università, Svapo, Giorgia tolte (restano nello storico).
   Movimenti: icona della categoria (`CAT_PATHS` in app.js), riquadro blu = Apple Pay, verde = entrata.
   Entrate: categoria "Entrate" (o `direction: "in"`). Ogni risposta di `expense-ingest` ha `message`, mostrato nella notifica del comando.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).

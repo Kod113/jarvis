@@ -13,14 +13,15 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: tr
 const LAT = 41.9028, LON = 12.4964;
 
 // Stesse categorie dei database spese su Notion.
+// Università, Svapo e Giorgia tolte (ott 2026): restano solo nello storico.
 const CATEGORIES = ['Cibo', 'Spesa', 'Benza', 'Auto', 'Shopping', 'Abbonamenti', 'Salute', 'Esperienze', 'Fun', 'Cinema', 'Formazione',
-  'Università', 'Regali', 'Home', 'Lavanderia', 'Burocrazie', 'Svapo', 'Yugi', 'Giorgia', 'Investimenti'];
-// Tetto mensile per categoria (mese finanziario 27→26): 50 € per tutte, tranne queste.
-// Investimenti senza tetto (null).
-const CAT_CAP = { Benza: 130, Spesa: 70, Cibo: 130, Investimenti: null };
-const capOf = (c) => (c in CAT_CAP ? CAT_CAP[c] : 50);
+  'Regali', 'Home', 'Lavanderia', 'Burocrazie', 'Yugi', 'Investimenti'];
+// Tetto mensile per categoria (mese finanziario 27→26). Solo queste hanno un tetto; le altre (spese saltuarie,
+// Investimenti, categorie vecchie) no. Abbonamenti e Formazione = importi ricorrenti degli ultimi mesi su Notion.
+const CAT_CAP = { Benza: 130, Cibo: 130, Spesa: 70, Shopping: 50, Fun: 50, Yugi: 50, Abbonamenti: 46.93, Formazione: 188.75 };
+const capOf = (c) => CAT_CAP[c] ?? null;
 // Budget del mese = somma dei tetti; modificabile per un singolo mese (ls 'budget:YYYY-MM').
-const CAPS_TOTAL = CATEGORIES.reduce((a, c) => a + (capOf(c) ?? 0), 0);
+const CAPS_TOTAL = Math.round(Object.values(CAT_CAP).reduce((a, v) => a + v, 0) * 100) / 100;
 const budgetFor = (key) => ls.get('budget:' + key, null) ?? CAPS_TOTAL;
 const KINDS = [
   { id: 'task', label: 'Task' },
@@ -1132,7 +1133,7 @@ function viewSpese() {
       const r = v / cap;
       const st = r > 1 ? 'over' : r >= 0.8 ? 'near' : '';
       const note = r > 1 ? `Sforato di €${eur(v - cap)}` : `Restano €${eur(cap - v)}`;
-      return `<div class="cat-row ${st}"><div class="cat-top"><span>${esc(c)}</span><span class="mono"><b>€${eur(v)}</b> <span class="muted">/ €${cap}</span></span></div><div class="cat-bar"><div style="width:${Math.min(100, Math.round(r * 100))}%"></div></div>${isCurrent || r > 1 ? `<span class="cat-note">${note}</span>` : ''}</div>`;
+      return `<div class="cat-row ${st}"><div class="cat-top"><span>${esc(c)}</span><span class="mono"><b>€${eur(v)}</b> <span class="muted">/ €${Number.isInteger(cap) ? cap : eur(cap)}</span></span></div><div class="cat-bar"><div style="width:${Math.min(100, Math.round(r * 100))}%"></div></div>${isCurrent || r > 1 ? `<span class="cat-note">${note}</span>` : ''}</div>`;
     }).join('') : '<p class="empty">Ancora nessuna spesa in questo mese.</p>'}
   </div>
   <div class="card">
@@ -1379,7 +1380,7 @@ const actions = {
   notionSync() { notionSync(true); },
   budget() {
     const key = shiftKey(financialKey(new Date()), S.ui.spMonth);
-    const v = prompt(`Budget di ${keyName(key)} in euro (vuoto = somma dei tetti, €${CAPS_TOTAL})`, String(budgetFor(key)));
+    const v = prompt(`Budget di ${keyName(key)} in euro (vuoto = somma dei tetti, €${eur(CAPS_TOTAL)})`, String(budgetFor(key)));
     if (v === null) return;
     const n = Number(String(v).replace(/[€\s]/g, '').replace(',', '.'));
     if (!String(v).trim() || n === CAPS_TOTAL) ls.set('budget:' + key, null);
