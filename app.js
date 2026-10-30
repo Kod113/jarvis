@@ -971,6 +971,7 @@ function shortcutCardHtml() {
     <div class="sc-field"><span class="stat-l">Codice personale</span>
       ${u.scToken ? `<code>${esc(u.scToken)}</code><button class="btn primary" data-action="copy" data-id="token">Copia</button>`
         : `<button class="btn primary" data-action="newDeviceToken">Crea il codice</button>`}</div>
+    <div class="sc-field"><span class="stat-l">Categorie (da incollare nell'azione "Testo")</span><code>${CATEGORIES.join(' · ')}</code><button class="btn" data-action="copy" data-id="cats">Copia</button></div>
   </div>`;
 }
 
@@ -1214,8 +1215,8 @@ const actions = {
     S.ui.scToken = data; render();
   },
   async copy(id) {
-    const text = id === 'url' ? INGEST_URL : S.ui.scToken;
-    try { await navigator.clipboard.writeText(text); toast(id === 'url' ? 'Indirizzo copiato' : 'Codice copiato'); }
+    const text = id === 'url' ? INGEST_URL : id === 'cats' ? CATEGORIES.join('\n') : S.ui.scToken;
+    try { await navigator.clipboard.writeText(text); toast(id === 'url' ? 'Indirizzo copiato' : id === 'cats' ? 'Categorie copiate' : 'Codice copiato'); }
     catch { toast('Tieni premuto sul testo per copiarlo'); }
   },
   budget() {
