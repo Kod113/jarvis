@@ -948,7 +948,9 @@ function viewSettimana() {
   const pMon = addDays(mondayOf(new Date()), -7); const pSun = addDays(pMon, 6);
   const inPrev = (iso) => { const d = ymd(new Date(iso)); return d >= ymd(pMon) && d <= ymd(pSun); };
   const doneN = S.tasks.filter((x) => x.done && x.done_at && inPrev(x.done_at)).length;
-  const spent = S.expenses.filter((e) => inPrev(e.spent_at)).reduce((a, e) => a + Number(e.amount), 0);
+  // La settimana scorsa può cadere nel mese finanziario precedente: carichiamo i mesi che tocca. Le entrate non sono spese.
+  ensureMonthLoaded(financialKey(pMon)); ensureMonthLoaded(financialKey(pSun));
+  const spent = S.expenses.filter((e) => e.direction !== 'in' && inPrev(e.spent_at)).reduce((a, e) => a + Number(e.amount), 0);
 
   return `${headHtml(range, 'Settimana', `<div class="week-nav">
       <button data-action="week" data-id="-1" aria-label="Settimana precedente">${I.left}</button>
