@@ -406,9 +406,8 @@ function todayTasks() {
     return x.rescheduled_at && ymd(new Date(x.rescheduled_at)) === t;
   });
   const rank = (x) => (x.done ? 3 : x.due_date && x.due_date > t ? 2 : 1);
-  return list.sort((a, b) => rank(a) - rank(b)
-    || (a.due_time || '99').localeCompare(b.due_time || '99')
-    || a.created_at.localeCompare(b.created_at));
+  // Prima le task da fare, dalla più recente; poi quelle spostate; in fondo le fatte.
+  return list.sort((a, b) => rank(a) - rank(b) || b.created_at.localeCompare(a.created_at));
 }
 const tasksOn = (day) => S.tasks.filter((x) => x.due_date === day).sort((a, b) => (a.due_time || '99').localeCompare(b.due_time || '99'));
 const inbox = () => S.captures.filter((c) => c.status === 'inbox');
@@ -525,7 +524,8 @@ function tasksCardHtml() {
   const doneN = list.filter((x) => x.done).length;
   return `<div class="card tasks span2">
     <p class="card-label"><span>Task di oggi</span><span class="mono">${doneN} / ${list.length}</span></p>
-    ${list.map(taskRowHtml).join('')}
+    ${(S.ui.tasksAll ? list : list.slice(0, 3)).map(taskRowHtml).join('')}
+    ${list.length > 3 ? `<button class="more-btn" data-action="tasksAll">${S.ui.tasksAll ? 'Mostra meno' : `Mostra tutte · altre ${list.length - 3}`}</button>` : ''}
     <div class="add-task">
       <span class="plus">${I.plus}</span>
       <label for="newTask" class="sr-only">Nuova task</label>
@@ -1226,6 +1226,7 @@ const actions = {
     if (n > 0) { ls.set('budget', n); render(); }
   },
   mFilter(id) { S.ui.mFilter = id; render(); },
+  tasksAll() { S.ui.tasksAll = !S.ui.tasksAll; render(); },
   editTask(id) {
     const t = S.tasks.find((x) => x.id === id); if (!t) return;
     S.ui.editId = id; S.ui.editText = t.title; focusLater('edit-' + id); render();

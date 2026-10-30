@@ -7,6 +7,8 @@ const db = {
     { id:'t1', title:'Pagare bollo auto', done:true, done_at:new Date().toISOString(), due_date:null, due_time:null, created_at:'2026-10-28T08:00:00Z', rescheduled_at:null },
     { id:'t2', title:'Rinnovare assicurazione auto', done:false, due_date:ymd(today), due_time:'21:30', created_at:'2026-10-28T08:01:00Z', rescheduled_at:null },
     { id:'t3', title:'Finire modulo TryHackMe', done:false, due_date:add(2), due_time:'10:00', created_at:'2026-10-28T08:02:00Z', rescheduled_at:new Date().toISOString() },
+    { id:'t5', title:'Lavare la macchina', done:false, due_date:null, due_time:null, created_at:'2026-10-28T09:00:00Z', rescheduled_at:null },
+    { id:'t6', title:'Comprare il latte', done:false, due_date:null, due_time:null, created_at:'2026-10-28T09:05:00Z', rescheduled_at:null },
     { id:'t4', title:'Chiamare il meccanico', done:false, due_date:add(5), due_time:'09:00', created_at:'2026-10-28T08:03:00Z', rescheduled_at:null },
   ],
   captures: [
