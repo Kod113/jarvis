@@ -124,7 +124,7 @@ const S = {
   healthDays: [],
   garminSync: 'idle',
   activities: [],
-  gcal: { configured: false, connected: false, calendars: [] },
+  gcal: { configured: false, connected: ls.get('gcalConnected', false), calendars: [], loaded: false },
   events: [],
   evRange: null,
   ui: {
@@ -274,7 +274,8 @@ async function loadEvents(force = false) {
 }
 async function loadGcal() {
   try {
-    S.gcal = await gcal('status');
+    S.gcal = { ...(await gcal('status')), loaded: true };
+    ls.set('gcalConnected', !!S.gcal.connected);
     S.evRange = null;
     await loadEvents(true);
   } catch (err) { console.warn('gcal', err); }
@@ -772,7 +773,7 @@ function eventListHtml(evs) {
 }
 
 function gcalCardHtml(cls = 'span2') {
-  if (S.gcal.connected) return '';
+  if (!S.gcal.loaded || S.gcal.connected) return '';
   return `<div class="card ${cls}">
     <p class="card-label"><span>Google Calendar</span><span>anche Notion Calendar</span></p>
     <p class="card-strong">Collega il calendario per vedere i tuoi eventi qui e mettere in calendario le task.</p>
