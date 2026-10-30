@@ -119,13 +119,18 @@ function isDark() {
   if (o && Date.now() < o.until) return o.theme === 'dark';
   return autoDark(now);
 }
-function applyTheme() {
+let metaTimer = null;
+// metaDelay: ritardo per il colore della barra di stato (ora, batteria), che non si può animare:
+// durante la transizione a cerchio cambia quando il cerchio arriva in cima allo schermo.
+function applyTheme(metaDelay = 0) {
   const dark = isDark();
   const theme = dark ? 'dark' : 'light';
   document.documentElement.dataset.theme = theme;
   document.documentElement.style.setProperty('--logo-bg', dark ? '#17171A' : '#2E5BDB');
   const meta = document.getElementById('theme-color');
-  if (meta) meta.content = dark ? '#0F0F11' : '#EFEFEC';
+  clearTimeout(metaTimer);
+  const setMeta = () => { if (meta) meta.content = dark ? '#0F0F11' : '#EFEFEC'; };
+  if (metaDelay > 0) metaTimer = setTimeout(setMeta, metaDelay); else setMeta();
 }
 // Pulsante sole/luna: luna di giorno (porta alla notte), sole di sera (porta al giorno).
 let themeAnimUntil = 0; // l'icona ruota solo subito dopo il cambio, non a ogni render
@@ -1254,23 +1259,31 @@ const actions = {
   toggleTheme(_id, el) {
     const goDark = !isDark();
     const now = new Date();
+    const btn = el || document.querySelector('.theme-btn');
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const useVT = document.startViewTransition && !reduce && btn;
+    const DUR = 520;
+    let x = 0, y = 0, end = 0, metaDelay = 0;
+    if (useVT) {
+      const r = btn.getBoundingClientRect();
+      x = r.left + r.width / 2; y = r.top + r.height / 2;
+      end = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      // Quando il cerchio copre tutta la fascia in alto (fino all'angolo più lontano): lì cambia anche la barra di stato.
+      const topReach = Math.hypot(Math.max(x, innerWidth - x), y);
+      metaDelay = Math.round(DUR * Math.sqrt(Math.min(1, topReach / end)) * 0.85);
+    }
     const switchIt = () => {
       // Se il nuovo tema coincide con quello automatico, niente override; altrimenti vale fino al prossimo tramonto/alba.
       if (goDark === autoDark(now)) ls.set('themeOverride', null);
       else ls.set('themeOverride', { theme: goDark ? 'dark' : 'light', until: nextSunChange(now) });
       themeAnimUntil = Date.now() + 700;
-      applyTheme(); render();
+      applyTheme(metaDelay); render();
     };
-    const btn = el || document.querySelector('.theme-btn');
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (document.startViewTransition && !reduce && btn) {
-      const r = btn.getBoundingClientRect();
-      const x = r.left + r.width / 2, y = r.top + r.height / 2;
-      const end = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    if (useVT) {
       const vt = document.startViewTransition(switchIt);
       vt.ready.then(() => {
         document.documentElement.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${end}px at ${x}px ${y}px)`] },
-          { duration: 520, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' });
+          { duration: DUR, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' });
       }).catch(() => {});
     } else {
       document.documentElement.classList.add('theme-fade');
