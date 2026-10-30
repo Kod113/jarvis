@@ -584,9 +584,9 @@ function vsAvg(key, val, higherIsGood) {
   const a = avgOf(key);
   if (a == null || val == null) return '';
   const d = Math.round(val - a);
-  if (d === 0) return '<span class="trend">in media</span>';
+  if (d === 0) return '<span class="trend" title="Uguale alla media degli ultimi 30 giorni">=</span>';
   const good = higherIsGood ? d > 0 : d < 0;
-  return `<span class="trend ${good ? 'good' : 'bad'}">${d > 0 ? '+' : '−'}${Math.abs(d)} media</span>`;
+  return `<span class="trend ${good ? 'good' : 'bad'}" title="Rispetto alla media degli ultimi 30 giorni">${d > 0 ? '+' : '−'}${Math.abs(d)}</span>`;
 }
 function metricRow(kind, icon, label, val, unit, trend) {
   return `<div class="m-row"><span class="m-icon ${kind}">${icon}</span><span class="m-label">${label}</span>
