@@ -171,6 +171,7 @@ const S = {
     draft: '', kind: 'auto', capOpen: false, listening: false,
     toast: '',
     newTask: '',
+    weekTodosOpen: ls.get('weekTodosOpen', true),
     weekOffset: 0, weekSel: todayYmd(),
     monthOffset: 0, calSel: todayYmd(),
     spMonth: 0, adding: false, exAmount: '', exDesc: '', exCat: 'Cibo', exMethod: 'manual',
@@ -476,11 +477,10 @@ function todayTasks() {
   const t = todayYmd();
   const list = S.tasks.filter((x) => {
     if (x.done) return x.done_at && ymd(new Date(x.done_at)) === t && (!x.due_date || x.due_date <= t);
-    if (!x.due_date || x.due_date <= t) return true;
-    return x.rescheduled_at && ymd(new Date(x.rescheduled_at)) === t;
+    return !x.due_date || x.due_date <= t; // programmate per un altro giorno: stanno in Settimana
   });
-  const rank = (x) => (x.done ? 3 : x.due_date && x.due_date > t ? 2 : 1);
-  // Prima le task da fare, dalla più recente; poi quelle spostate; in fondo le fatte.
+  const rank = (x) => (x.done ? 3 : 1);
+  // Prima le task da fare, dalla più recente; in fondo le fatte.
   return list.sort((a, b) => rank(a) - rank(b) || b.created_at.localeCompare(a.created_at));
 }
 const tasksOn = (day) => S.tasks.filter((x) => x.due_date === day).sort((a, b) => (a.due_time || '99').localeCompare(b.due_time || '99'));
@@ -489,7 +489,7 @@ const inbox = () => S.captures.filter((c) => c.status === 'inbox');
 function taskWhen(x) {
   const t = todayYmd();
   if (!x.due_date) return '';
-  if (x.due_date > t) return `Spostata a ${dayLabel(x.due_date)}${x.due_time ? ', ' + hhmm(x.due_time) : ''}`;
+  if (x.due_date > t) { const l = dayLabel(x.due_date); return `${l.charAt(0).toUpperCase() + l.slice(1)}${x.due_time ? ' alle ' + hhmm(x.due_time) : ''}`; }
   if (x.due_date < t && !x.done) return `In sospeso da ${dayLabel(x.due_date)}`;
   return x.due_time ? `Oggi alle ${hhmm(x.due_time)}` : '';
 }
@@ -554,10 +554,10 @@ function navHtml() {
   </nav>`;
 }
 
-function taskRowHtml(x) {
+function taskRowHtml(x, opts) {
   const t = todayYmd();
-  const moved = !x.done && x.due_date && x.due_date > t;
-  const when = taskWhen(x);
+  const moved = false; // le task programmate per altri giorni non sono più in Oggi
+  const when = opts && opts.timeOnly === true ? (x.due_time ? `Alle ${hhmm(x.due_time)}` : '') : taskWhen(x);
   const open = S.ui.schedId === x.id;
   const clockCls = open ? 'open' : (x.due_time || moved ? 'set' : '');
   const editing = S.ui.editId === x.id;
@@ -604,6 +604,28 @@ function schedHtml() {
       <button class="btn grow" data-action="closeSched">Annulla</button>
       <button class="btn primary grow2" data-action="confirmSched">Metti in calendario</button>
     </div>
+  </div>`;
+}
+
+// Settimana: to-do già programmati (stessa grafica delle task di oggi), della settimana mostrata o tutti, raggruppati per giorno.
+function weekTodosHtml(mon) {
+  const t = todayYmd(), a = ymd(mon), b = ymd(addDays(mon, 6));
+  const all = S.ui.wtAll;
+  const list = S.tasks.filter((x) => x.due_date && x.due_date > t && (all || (x.due_date >= a && x.due_date <= b)))
+    .sort((x, y) => x.due_date.localeCompare(y.due_date) || (x.done - y.done) || (x.due_time || '99').localeCompare(y.due_time || '99'));
+  const open = S.ui.weekTodosOpen !== false;
+  const doneN = list.filter((x) => x.done).length;
+  let body = '';
+  if (open) {
+    const groups = [];
+    list.forEach((x) => { const g = groups[groups.length - 1]; if (g && g.day === x.due_date) g.items.push(x); else groups.push({ day: x.due_date, items: [x] }); });
+    const head = (d) => { const l = dayLabel(d); const dt = parseYmd(d); return `${l.charAt(0).toUpperCase() + l.slice(1)}${all && !['oggi', 'domani'].includes(l) ? ' ' + MONTHS[dt.getMonth()].slice(0, 3) : ''}`; };
+    body = `<div class="chips wt-tabs"><button class="chip ${all ? '' : 'on'}" data-action="wtAll" data-id="0">Questa settimana</button><button class="chip ${all ? 'on' : ''}" data-action="wtAll" data-id="1">Tutti i programmati</button></div>
+    ${groups.length ? groups.map((g) => `<p class="wt-day">${head(g.day)}</p>${g.items.map((x) => taskRowHtml(x, { timeOnly: true })).join('')}`).join('') : `<p class="empty">${all ? 'Nessun to-do programmato.' : 'Nessun to-do programmato in questa settimana.'}</p>`}`;
+  }
+  return `<div class="card tasks week-todos ${open ? 'open' : ''}">
+    <button class="card-label wt-head" data-action="weekTodos" aria-expanded="${open}"><span>To-do programmati</span><span class="mono">${doneN} / ${list.length} <span class="wt-chev">${I.right}</span></span></button>
+    ${body}
   </div>`;
 }
 
@@ -1215,6 +1237,7 @@ function viewSettimana() {
       <button data-action="week" data-id="1" aria-label="Settimana successiva">${I.right}</button>
       <button class="pill-badge" data-action="go" data-id="calendario">Mese</button></div>`)}
   <div class="week-strip">${strip}</div>
+  ${weekTodosHtml(mon)}
   <div class="card">
     <p class="card-label"><span>${longDate(sel)}</span><span>${list.length + dayEvs.length} ${list.length + dayEvs.length === 1 ? 'cosa' : 'cose'}</span></p>
     ${dayEvs.length || list.some((x) => x.due_time) ? dayBlocksHtml(u.weekSel, dayEvs, list) : ''}
@@ -1690,6 +1713,8 @@ const actions = {
   },
   undo() { const f = toastUndo; toastUndo = null; S.ui.toast = ''; clearTimeout(toastTimer); if (f) f(); render(); },
   garminRefresh() { refreshGarmin(true); },
+  wtAll(id) { S.ui.wtAll = id === '1'; render(); },
+  weekTodos() { S.ui.weekTodosOpen = S.ui.weekTodosOpen === false; ls.set('weekTodosOpen', S.ui.weekTodosOpen); render(); },
   corpoWeek(id) { S.ui.corpoWeek = Math.min(0, (S.ui.corpoWeek || 0) + Number(id)); render(); },
   async logout() { await sb.auth.signOut(); },
   async signup() {
