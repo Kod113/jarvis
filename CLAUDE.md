@@ -58,15 +58,20 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   allenamento di ieri coerente o no con la prontezza, sonno), settimana vs precedente, pattern nel tempo (dopo allenamento/riposo, intensi vs leggeri,
   sonno → Body Battery/prontezza, corsa vs forza, giorno della settimana, tendenza 2 settimane). L'app carica 365 giorni di health_daily/activities.
   Storico Garmin: per recuperarne di più avvia il workflow con input `days` (es. 180).
-- Allenamenti: corsa = icona omino (azzurro), tutto il resto = "Forza" con icona bilanciere (scelta di David).
+- Allenamenti: corsa = icona omino (verde), tutto il resto = "Forza" con icona bilanciere (scelta di David).
 - Barra in basso (telefono): pillola arrotondata come la cattura, indicatore che scivola (`--i`), si può trascinare col dito tra le sezioni;
   la sezione entra con un'animazione laterale. Con la tastiera aperta la cattura sale sopra la tastiera (`visualViewport`, classe `kb-open`);
   toccando fuori dalla barra mentre scrivi salva e chiude la tastiera (tag, invio e microfono non salvano).
 - Task: in "Task di oggi" solo quelle senza data, di oggi o in sospeso; quelle programmate per un altro giorno stanno in Settimana nel blocco
   espandibile "To-do programmati" (`weekTodosHtml`: Questa settimana / Tutti i programmati, raggruppate per giorno, stesse righe `taskRowHtml`).
-- Spunti: tag Task, Frase, Idea; senza tag decide Jarvis (nessun pulsante, i tag si deselezionano). Nella Mente frasi e idee sono trattate allo stesso modo
-  (niente filtri né etichette) e ogni voce ha "To-do" (azione `toTodo`) che la trasforma in task di oggi; ogni task di oggi ha il
-  pulsante con l'icona Mente (azione `toMind`) che la sposta nella Mente (capture `kind='idea'`, `status='archived'`). ("Da studiare" tolto su richiesta di David: confluisce in Idea; `studio` resta solo per dati vecchi).
+- Spunti: tag To-do e Idea (Frase tolto; le frasi vecchie restano nella Mente come idee). Senza tag vale la pagina (`defaultKind()`): in Oggi → to-do,
+  altrove → idea nella Mente (capture `status='archived'`). Mente mostra solo capture `archived`; ogni voce ha la matita (azione `toInbox`: va in
+  "Da smistare" di Settimana, `status='inbox'`, con la voce che vola verso Settimana) e la spunta (azione `capDone`: scorre a destra e sparisce;
+  non si cancella, va a `status='planned'` senza task perché il vincolo `captures_status_check` non ha ancora 'done'). Ogni task di oggi ha il
+  pulsante Mente (azione `toMind`). `classify()` non è più usata. Mentre modifichi una task la pillola di cattura sparisce.
+- Navigazione telefono: swipe orizzontale nella pagina = sezione dopo/prima (esclusi barra, cattura, campi, eventi, elementi scorrevoli).
+  Toccare la sezione già aperta torna in cima; toccare Settimana riporta sempre il selettore su oggi.
+- Corpo: allenamenti verde = corsa, giallo = forza (token `--run`/`--str`); nei grafici la lettera del giorno prende lo stesso colore.
 - Zoom disattivato su telefono (viewport, `touch-action: manipulation`, blocco gesture iOS, campi a 16px) per non rompere le animazioni.
 - Cache: `index.html` carica `styles.css?v=…` e `app.js?v=…`: aggiorna la versione a ogni modifica del frontend, sennò l'iPhone resta sulla vecchia.
 - Testi in italiano. Font Geist / Geist Mono.

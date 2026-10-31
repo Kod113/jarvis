@@ -14,6 +14,7 @@ const db = {
   captures: [
     { id:'c1', body:'Zero-knowledge proof', kind:'studio', status:'inbox', created_at:new Date().toISOString() },
     { id:'c2', body:'Idea per il sync Garmin', kind:'idea', status:'inbox', created_at:new Date().toISOString() },
+    { id:'c4', body:'App per tracciare i libri letti', kind:'idea', status:'archived', created_at:new Date().toISOString() },
     { id:'c3', body:'"La disciplina è scegliere tra ciò che vuoi ora e ciò che vuoi di più"', kind:'frase', status:'archived', created_at:new Date().toISOString() },
   ],
   expenses: [

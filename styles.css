@@ -17,6 +17,10 @@
   --pill-ink: #FFFFFF;
   --pill-muted: #B5B5BA;
   --check-off: #B9B8B2;
+  --run: #1E9E5A;
+  --run-soft: #D7F2E2;
+  --str: #B08300;
+  --str-soft: #FBEFC8;
   --shadow: 0 8px 24px rgba(23, 23, 26, 0.10);
   --radius: 22px;
   --nav-h: 76px;
@@ -42,6 +46,10 @@
   --pill-ink: #F2F2F0;
   --pill-muted: #9A9AA2;
   --check-off: #55555C;
+  --run: #4CD38A;
+  --run-soft: #16362A;
+  --str: #F2C744;
+  --str-soft: #3A3115;
   --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   color-scheme: dark;
 }
@@ -97,11 +105,13 @@ button.card { border: 0; text-align: left; color: inherit; font: inherit; }
 .bar-v { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; min-height: 13px; }
 .bar-l { font-size: 11px; color: var(--muted); }
 .bar-col.today .bar-l { color: var(--accent); font-weight: 600; }
+.bar-l.run, .bar-col.today .bar-l.run { color: var(--run); font-weight: 700; }
+.bar-l.str, .bar-col.today .bar-l.str { color: var(--str); font-weight: 700; }
 
 .act-head { display: flex; align-items: center; gap: 10px; }
 .act-icon { width: 36px; height: 36px; flex: none; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; background: var(--line-2); color: var(--muted); }
-.act-icon.run { background: var(--soft); color: var(--accent); }
-.act-icon.str { background: var(--ink); color: var(--bg); }
+.act-icon.run { background: var(--run-soft); color: var(--run); }
+.act-icon.str { background: var(--str-soft); color: var(--str); }
 .done-badge { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--soft); color: var(--accent); }
 
 .card-actions { display: inline-flex; align-items: center; gap: 10px; }
@@ -261,6 +271,9 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 .tag.task { background: var(--line); color: var(--ink); }
 .todo-btn { align-self: center; flex: none; border: 1px solid var(--line); background: transparent; color: var(--accent); font-size: 12px; font-weight: 600; border-radius: 999px; padding: 6px 12px; min-height: 32px; margin-left: 6px; }
 .todo-btn:active { background: var(--soft); }
+.m-btn { flex: none; color: var(--muted); }
+.m-btn:active { color: var(--accent); }
+.li[data-cap] { will-change: transform; }
 .tag.frase { background: var(--ink); color: var(--bg); }
 
 /* ---------- Liste ---------- */
@@ -491,3 +504,4 @@ button.tb-chip { border: 0; color: var(--ink); font: inherit; font-size: 12px; c
 .week-todos.open .wt-chev { transform: rotate(90deg); }
 .wt-tabs { margin: 2px 0 4px; }
 .wt-day { margin: 10px 0 0; font-size: 12px; font-weight: 600; color: var(--muted); }
+.list:has(> [data-cap]) { overflow: hidden; }

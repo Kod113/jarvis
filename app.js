@@ -24,10 +24,11 @@ const capOf = (c) => CAT_CAP[c] ?? null;
 const CAPS_TOTAL = Math.round(Object.values(CAT_CAP).reduce((a, v) => a + v, 0) * 100) / 100;
 const budgetFor = (key) => ls.get('budget:' + key, null) ?? CAPS_TOTAL;
 const KINDS = [
-  { id: 'task', label: 'Task' },
-  { id: 'frase', label: 'Frase' },
+  { id: 'task', label: 'To-do' },
   { id: 'idea', label: 'Idea' }
 ];
+// Senza tag: in Oggi (dove ci sono i to-do) è un to-do, nelle altre pagine un'idea nella Mente.
+const defaultKind = () => (S.view === 'oggi' ? 'task' : 'idea');
 const KIND_LABEL = { task: 'Task', studio: 'Idea', frase: 'Frase', idea: 'Idea', auto: 'Jarvis' };
 const DOW = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 const DOW_LONG = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
@@ -36,6 +37,7 @@ const TIMES = ['09:00', '12:00', '15:30', '18:00', '21:00'];
 
 // ---------------------------------------------------------------- Icone
 const I = {
+  pencil: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/><path d="M14.5 5.5l3 3"/></svg>',
   moon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
   sunSmall: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
@@ -378,8 +380,8 @@ function cleanTaskTitle(text) {
 }
 
 // Animazione della cattura: una pillola col testo parte dalla barra e vola verso la sezione di destinazione.
-function flyCapture(text, target) {
-  const from = document.querySelector('.capture');
+function flyCapture(text, target, fromEl) {
+  const from = fromEl || document.querySelector('.capture');
   if (!from || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const a = from.getBoundingClientRect();
   const el = document.createElement('div');
@@ -413,7 +415,7 @@ async function saveCapture() {
   const text = S.ui.draft.trim();
   if (!text) { S.ui.capOpen = false; render(); return; }
   const chosen = S.ui.kind;
-  const kind = chosen === 'auto' ? classify(text) : chosen;
+  const kind = chosen === 'auto' ? defaultKind() : chosen;
   flyCapture(text, kind === 'task' ? 'oggi' : 'mente');
   S.ui.draft = ''; S.ui.capOpen = false; S.ui.kind = 'auto';
   stopListening();
@@ -422,12 +424,11 @@ async function saveCapture() {
     if (kind === 'task') {
       await addTask(cleanTaskTitle(text), { source: 'capture' });
     } else {
-      const { data, error } = await sb.from('captures').insert({ body: text, kind }).select().single();
+      const { data, error } = await sb.from('captures').insert({ body: text, kind, status: 'archived' }).select().single();
       if (error) throw error;
       S.captures.unshift(data);
     }
-    const where = kind === 'task' ? 'Task di oggi' : KIND_LABEL[kind];
-    toast(chosen === 'auto' ? `Jarvis l'ha messo in ${where}` : `Salvato in ${where}`);
+    toast(kind === 'task' ? 'Salvato nei To-do' : 'Salvato nella Mente');
   } catch (err) { fail(err); }
 }
 
@@ -509,7 +510,7 @@ function headHtml(date, title, extra = '') {
 
 function captureHtml() {
   const u = S.ui;
-  const kinds = u.capOpen ? `<div class="kinds"><p>Dove lo metto? Se non scegli, decide Jarvis</p><div class="chips">${KINDS.map((k) =>
+  const kinds = u.capOpen ? `<div class="kinds"><p>Dove lo metto? Se non scegli: ${defaultKind() === 'task' ? 'To-do' : 'Mente'}</p><div class="chips">${KINDS.map((k) =>
     `<button class="chip ${u.kind === k.id ? 'on' : ''}" data-action="kind" data-id="${k.id}">${k.label}</button>`).join('')}</div></div>` : '';
   const tst = u.toast && !isWide() ? toastHtml('') : '';
   return `<div class="capture-wrap">
@@ -756,7 +757,7 @@ function barsHtml(title, days, key, fmt, note = '') {
     <div class="bars">${days.map((d, i) => {
       const v = vals[i];
       const pct = v == null ? 0 : Math.max(6, Math.round(((v - min) / (max - min || 1)) * 100));
-      return `<div class="bar-col ${d.today ? 'today' : ''}"><span class="bar-v">${v != null ? fmt(v) : ''}</span><span class="bar-track"><span style="height:${pct}%"></span></span><span class="bar-l">${d.dow}</span></div>`;
+      return `<div class="bar-col ${d.today ? 'today' : ''}"><span class="bar-v">${v != null ? fmt(v) : ''}</span><span class="bar-track"><span style="height:${pct}%"></span></span><span class="bar-l ${d.act || ''}">${d.dow}</span></div>`;
     }).join('')}</div>
     ${note ? `<p class="card-label"><span>${note}</span></p>` : ''}
   </div>`;
@@ -918,6 +919,8 @@ function viewCorpo() {
     return { id, dow: DOW[i].charAt(0), today: id === t, h: (S.healthDays || []).find((x) => x.day === id) };
   });
   const acts = (S.activities || []).filter((a) => a.day >= ymd(mon) && a.day <= ymd(sun)).sort((a, b) => a.start_time.localeCompare(b.start_time));
+  // Giorno colorato come l'icona dell'allenamento: verde corsa, giallo forza (corsa prevale se ci sono entrambi).
+  days.forEach((d) => { const da = acts.filter((a) => a.day === d.id); d.act = da.some((a) => RUN_TYPES.includes(a.type)) ? 'run' : da.length ? 'str' : ''; });
   const totS = acts.reduce((s, a) => s + (a.duration_s || 0), 0);
   const totM = acts.reduce((s, a) => s + Number(a.distance_m || 0), 0);
   const load = acts.reduce((s, a) => s + Number(a.training_load || 0), 0);
@@ -1423,11 +1426,11 @@ function viewMente() {
   const u = S.ui;
   const q = u.mSearch.trim().toLowerCase();
   // Frasi e idee trattate allo stesso modo: sono pensieri, da tenere qui o spostare nei To-do.
-  const all = S.captures.filter((c) => c.kind !== 'task' && (!q || c.body.toLowerCase().includes(q)));
+  const all = S.captures.filter((c) => c.kind !== 'task' && c.status === 'archived' && (!q || c.body.toLowerCase().includes(q)));
   return `${headHtml('', 'Mente')}
   <div class="search">${I.search}<label for="mSearch" class="sr-only">Cerca</label><input id="mSearch" data-model="mSearch" value="${esc(u.mSearch)}" placeholder="Cerca nei tuoi pensieri…"></div>
   <div class="card">
-    <div class="list">${all.map((c) => `<div class="li"><div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}${c.status === 'inbox' ? ' · da smistare' : ''}</span></div><button class="todo-btn" data-action="toTodo" data-id="${c.id}" aria-label="Sposta in To-do: ${esc(c.body)}">To-do</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un pensiero dalla barra.</p>'}</div>
+    <div class="list">${all.map((c) => `<div class="li" data-cap="${c.id}"><div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}</span></div><button class="icon-btn m-btn" data-action="toInbox" data-id="${c.id}" aria-label="Metti da smistare: ${esc(c.body)}" title="Metti da smistare">${I.pencil}</button><button class="icon-btn m-btn" data-action="capDone" data-id="${c.id}" aria-label="Togli: ${esc(c.body)}" title="Non serve più">${I.checkBig}</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un pensiero dalla barra.</p>'}</div>
   </div>`;
 }
 
@@ -1470,7 +1473,7 @@ function render() {
   const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente, corpo: viewCorpo };
   const body = (views[S.view] || viewOggi)();
   const floatToast = S.ui.toast && isWide() ? toastHtml('float') : '';
-  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() ? '' : captureHtml()}${floatToast}${evEditorHtml()}</div>`;
+  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() || S.ui.editId ? '' : captureHtml()}${floatToast}${evEditorHtml()}</div>`;
   afterRenderNav();
   if (keepId) {
     const el = document.getElementById(keepId);
@@ -1484,8 +1487,12 @@ function render() {
 
 // ---------------------------------------------------------------- Azioni
 const actions = {
-  go(id) { if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300); S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
-  // Un tag si seleziona e si deseleziona: senza tag decide Jarvis (smistamento automatico).
+  go(id) {
+    // Settimana: il selettore torna sempre su oggi. Sezione già aperta: torna in cima.
+    if (id === 'settimana') { S.ui.weekOffset = 0; S.ui.weekSel = todayYmd(); }
+    if (id === S.view) { render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300); S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
+  // Un tag si seleziona e si deseleziona: senza tag vale la pagina (Oggi → To-do, altrove → Mente).
   kind(id) { S.ui.kind = S.ui.kind === id ? 'auto' : id; focusLater('cap'); render(); },
   saveCapture() { saveCapture(); },
   mic() { if (S.ui.listening) { stopListening(); render(); } else startListening(); },
@@ -1611,6 +1618,31 @@ const actions = {
       const { error: e2 } = await sb.from('tasks').delete().eq('id', id);
       if (e2) throw e2;
     } catch (err) { S.tasks.push(t); render(); fail(err); }
+  },
+  // Dalla Mente al blocco "Da smistare" di Settimana: la voce vola verso Settimana.
+  async toInbox(id) {
+    const c = S.captures.find((x) => x.id === id); if (!c) return;
+    const row = app.querySelector(`[data-cap="${id}"]`);
+    if (row) flyCapture(c.body, 'settimana', row.querySelector('.li-title') || row);
+    c.status = 'inbox'; render();
+    const { error } = await sb.from('captures').update({ status: 'inbox' }).eq('id', id);
+    if (error) { c.status = 'archived'; render(); fail(error); } else toast('Messo da smistare');
+  },
+  // Non serve più: la voce scorre a destra e sparisce (non si cancella: esce dalla Mente).
+  async capDone(id) {
+    const c = S.captures.find((x) => x.id === id); if (!c) return;
+    const row = app.querySelector(`[data-cap="${id}"]`);
+    const finish = () => { S.captures = S.captures.filter((x) => x.id !== id); render(); };
+    if (row && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const h = row.offsetHeight;
+      const a = row.animate([{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(110%)', opacity: 0 }], { duration: 320, easing: 'cubic-bezier(.4, 0, .6, 1)', fill: 'forwards' });
+      a.onfinish = () => {
+        row.style.overflow = 'hidden';
+        row.animate([{ height: h + 'px', minHeight: h + 'px' }, { height: '0px', minHeight: '0px', borderTopWidth: '0px' }], { duration: 200, easing: 'ease-out', fill: 'forwards' }).onfinish = finish;
+      };
+    } else finish();
+    const { error } = await sb.from('captures').update({ status: 'planned' }).eq('id', id);
+    if (error) { S.captures.unshift(c); render(); fail(error); }
   },
   // Dalla Mente alle task di oggi con un tocco.
   async toTodo(id) {
@@ -1759,6 +1791,31 @@ const endNavDrag = (e) => {
   if (bottomOf(S.view) !== BOTTOM[idx]) actions.go(BOTTOM[idx]);
 };
 let suppressNavClick = false;
+
+// Telefono: swipe orizzontale in mezzo alla pagina → sezione dopo (sinistra) o prima (destra).
+// Esclusi barra in basso, cattura, campi di testo, foglio evento, eventi trascinabili ed elementi che scorrono in orizzontale.
+let swipe = null;
+const scrollsX = (el) => { for (let n = el; n && n !== app; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true; } return false; };
+document.addEventListener('touchstart', (e) => {
+  swipe = null;
+  if (isWide() || !S.session || e.touches.length !== 1 || S.ui.editId || S.ui.evEdit || S.ui.capOpen) return;
+  const t = e.target;
+  if (t.closest('.nav-bottom, .capture-wrap, input, textarea, select, .ev-sheet, [data-evkey], .fly') || scrollsX(t)) return;
+  const p = e.touches[0];
+  swipe = { x: p.clientX, y: p.clientY, t: Date.now() };
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (!swipe) return;
+  const p = e.changedTouches[0];
+  const dx = p.clientX - swipe.x, dy = p.clientY - swipe.y, dt = Date.now() - swipe.t;
+  swipe = null;
+  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8 || dt > 700) return;
+  const i = BOTTOM.indexOf(bottomOf(S.view)) + (dx < 0 ? 1 : -1);
+  if (i < 0 || i >= BOTTOM.length) return;
+  suppressNavClick = true; setTimeout(() => { suppressNavClick = false; }, 350);
+  actions.go(BOTTOM[i]);
+}, { passive: true });
+document.addEventListener('touchcancel', () => { swipe = null; }, { passive: true });
 app.addEventListener('pointerup', endNavDrag);
 app.addEventListener('pointercancel', endNavDrag);
 
