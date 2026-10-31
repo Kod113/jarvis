@@ -69,6 +69,11 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   "Da smistare" di Settimana, `status='inbox'`, con la voce che vola verso Settimana) e la spunta (azione `capDone`: scorre a destra e sparisce;
   non si cancella, va a `status='done'`). Ogni task di oggi ha il
   pulsante Mente (azione `toMind`). `classify()` non è più usata. Mentre modifichi una task la pillola di cattura sparisce.
+- Foto negli spunti: nella barra di cattura pulsante immagine (`#capFile`, su iPhone apre Scatta foto / Libreria), incolla (anche Cmd+V fuori dai campi)
+  e trascinamento sulla barra. Max 6 per spunto, ridotte a 1800 px JPEG nel browser (`shrinkImage`), anteprime con × sopra la barra (`S.ui.capImgs`).
+  Caricate nel bucket privato Supabase `media` in `<user_id>/<id>.jpg` (policy storage solo sulla propria cartella); i percorsi in `tasks.images`
+  e `captures.images` (text[]). Miniature `thumbsHtml` in task, Mente e Da smistare; link firmati 1 h (`hydrateImages`, cache `imgCache`); tocco = visore (`viewImg`).
+  Le foto seguono la voce quando passa tra task, Mente e Da smistare. Spunto con sola foto: titolo "Foto".
 - Navigazione telefono: swipe orizzontale nella pagina = sezione dopo/prima (esclusi barra, cattura, campi, eventi, elementi scorrevoli).
   Toccare la sezione già aperta torna in cima; toccare Settimana riporta sempre il selettore su oggi.
 - Corpo: allenamenti verde = corsa, giallo = forza (token `--run`/`--str`); nei grafici la lettera del giorno prende lo stesso colore.

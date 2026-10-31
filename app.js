@@ -43,6 +43,8 @@ const I = {
   check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
   clock: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>',
   mic: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  image: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-8 8"/></svg>',
+  x: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   up: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
   plus: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   left: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
@@ -170,7 +172,7 @@ const S = {
   ui: {
     showDay: false,
     schedId: null, schedDay: null, schedTime: '',
-    draft: '', kind: 'auto', capOpen: false, listening: false,
+    draft: '', kind: 'auto', capOpen: false, listening: false, capImgs: [], viewImg: null,
     toast: '',
     newTask: '',
     weekTodosOpen: ls.get('weekTodosOpen', true),
@@ -413,23 +415,101 @@ function flyCapture(text, target, fromEl) {
 
 async function saveCapture() {
   const text = S.ui.draft.trim();
-  if (!text) { S.ui.capOpen = false; render(); return; }
+  const imgs = S.ui.capImgs;
+  if (!text && !imgs.length) { S.ui.capOpen = false; render(); return; }
   const chosen = S.ui.kind;
   const kind = chosen === 'auto' ? defaultKind() : chosen;
-  flyCapture(text, kind === 'task' ? 'oggi' : 'mente');
-  S.ui.draft = ''; S.ui.capOpen = false; S.ui.kind = 'auto';
+  flyCapture(text || (imgs.length > 1 ? `${imgs.length} foto` : 'Foto'), kind === 'task' ? 'oggi' : 'mente');
+  S.ui.draft = ''; S.ui.capOpen = false; S.ui.kind = 'auto'; S.ui.capImgs = [];
   stopListening();
   document.activeElement?.blur();
   try {
+    const images = imgs.length ? await uploadImages(imgs) : [];
+    const extra = images.length ? { images } : {};
+    const title = text || 'Foto';
     if (kind === 'task') {
-      await addTask(cleanTaskTitle(text), { source: 'capture' });
+      await addTask(cleanTaskTitle(title), { source: 'capture', ...extra });
     } else {
-      const { data, error } = await sb.from('captures').insert({ body: text, kind, status: 'archived' }).select().single();
+      const { data, error } = await sb.from('captures').insert({ body: title, kind, status: 'archived', ...extra }).select().single();
       if (error) throw error;
       S.captures.unshift(data);
     }
     toast(kind === 'task' ? 'Salvato nei To-do' : 'Salvato nella Mente');
   } catch (err) { fail(err); }
+}
+
+// ---------------------------------------------------------------- Immagini
+// Le foto vanno nel bucket privato "media" di Supabase, in una cartella col proprio id utente.
+// Nel database si salva solo il percorso (colonna images); per mostrarle si usano link firmati temporanei.
+const MAX_IMG_SIDE = 1800;
+const imgCache = new Map(); // percorso → { url, exp }
+const newId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+function loadImage(src) {
+  return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+}
+// Riduce la foto (max 1800 px sul lato lungo) e la converte in JPEG: upload veloce anche col telefono.
+async function shrinkImage(file) {
+  if (file.type === 'image/gif') return file;
+  const src = URL.createObjectURL(file);
+  try {
+    const im = await loadImage(src);
+    const k = Math.min(1, MAX_IMG_SIDE / Math.max(im.naturalWidth, im.naturalHeight));
+    const w = Math.round(im.naturalWidth * k), h = Math.round(im.naturalHeight * k);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(im, 0, 0, w, h);
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85));
+    return blob || file;
+  } catch { return file; } finally { URL.revokeObjectURL(src); }
+}
+async function addCapImages(files) {
+  const list = [...files].filter((f) => f && f.type.startsWith('image/'));
+  if (!list.length) return;
+  if (S.ui.capImgs.length + list.length > 6) toast('Massimo 6 foto per spunto');
+  const room = Math.max(0, 6 - S.ui.capImgs.length);
+  S.ui.capOpen = true;
+  for (const f of list.slice(0, room)) {
+    const blob = await shrinkImage(f);
+    S.ui.capImgs.push({ id: newId(), blob, url: URL.createObjectURL(blob) });
+  }
+  if (!isWide()) focusLater('cap');
+  render();
+}
+async function uploadImages(imgs) {
+  const uid = S.session.user.id;
+  const paths = [];
+  for (const im of imgs) {
+    const ext = im.blob.type === 'image/gif' ? 'gif' : im.blob.type === 'image/png' ? 'png' : 'jpg';
+    const path = `${uid}/${im.id}.${ext}`;
+    const { error } = await sb.storage.from('media').upload(path, im.blob, { contentType: im.blob.type || 'image/jpeg', cacheControl: '31536000' });
+    if (error) throw error;
+    imgCache.set(path, { url: im.url, exp: Infinity }); // già in memoria: si vede subito senza scaricarla
+    paths.push(path);
+  }
+  return paths;
+}
+function thumbsHtml(paths) {
+  if (!paths || !paths.length) return '';
+  return `<div class="thumbs">${paths.map((p) => `<button class="thumb" data-action="viewImg" data-id="${esc(p)}" aria-label="Apri foto"><img data-img="${esc(p)}" alt=""></button>`).join('')}</div>`;
+}
+// Dopo ogni render: mette i link alle foto (dalla cache, o chiedendo a Supabase i link firmati che mancano).
+async function hydrateImages() {
+  const els = [...app.querySelectorAll('img[data-img]')];
+  if (!els.length) return;
+  const now = Date.now();
+  const missing = new Set();
+  els.forEach((el) => {
+    const c = imgCache.get(el.dataset.img);
+    if (c && c.exp > now) { if (el.getAttribute('src') !== c.url) el.src = c.url; } else missing.add(el.dataset.img);
+  });
+  if (!missing.size) return;
+  const { data, error } = await sb.storage.from('media').createSignedUrls([...missing], 3600);
+  if (error || !data) return;
+  data.forEach((d) => { if (d.signedUrl) imgCache.set(d.path, { url: d.signedUrl, exp: Date.now() + 50 * 60000 }); });
+  app.querySelectorAll('img[data-img]').forEach((el) => { const c = imgCache.get(el.dataset.img); if (c && el.getAttribute('src') !== c.url) el.src = c.url; });
+}
+function lightboxHtml() {
+  if (!S.ui.viewImg) return '';
+  return `<div class="lightbox" data-action="closeImg" role="dialog" aria-label="Foto"><img data-img="${esc(S.ui.viewImg)}" alt=""><button class="lb-close" data-action="closeImg" aria-label="Chiudi">${I.x}</button></div>`;
 }
 
 // ---------------------------------------------------------------- Dettatura
@@ -513,15 +593,17 @@ function captureHtml() {
   const kinds = u.capOpen ? `<div class="kinds"><p>Dove lo metto? Se non scegli: ${defaultKind() === 'task' ? 'To-do' : 'Mente'}</p><div class="chips">${KINDS.map((k) =>
     `<button class="chip ${u.kind === k.id ? 'on' : ''}" data-action="kind" data-id="${k.id}">${k.label}</button>`).join('')}</div></div>` : '';
   const tst = u.toast && !isWide() ? toastHtml('') : '';
+  const pics = u.capImgs.length ? `<div class="cap-imgs">${u.capImgs.map((im) => `<div class="cap-img"><img src="${im.url}" alt=""><button data-action="rmCapImg" data-id="${im.id}" aria-label="Togli foto">${I.x}</button></div>`).join('')}</div>` : '';
   return `<div class="capture-wrap">
-    ${isWide() ? '' : tst}${isWide() ? '' : kinds}
+    ${isWide() ? '' : tst}${isWide() ? '' : kinds}${isWide() ? '' : pics}
     <div class="capture">
       <label for="cap" class="sr-only">Cattura</label>
       <input id="cap" data-model="draft" value="${esc(u.draft)}" placeholder="${u.listening ? 'Sto ascoltando…' : 'Cattura qualcosa…'}" autocomplete="off" enterkeyhint="send">
-      ${u.capOpen ? `<button class="round send" data-action="saveCapture" aria-label="Salva">${I.up}</button>` : ''}
+      ${u.capOpen || u.capImgs.length ? `<button class="round send" data-action="saveCapture" aria-label="Salva">${I.up}</button>` : ''}
+      <label class="round pic" title="Foto: scatta, scegli o incolla"><span class="sr-only">Aggiungi foto</span>${I.image}<input id="capFile" type="file" accept="image/*" multiple hidden></label>
       <button class="round mic ${u.listening ? 'on' : ''}" data-action="mic" aria-label="Detta">${I.mic}</button>
     </div>
-    ${isWide() ? kinds : ''}
+    ${isWide() && (pics || kinds) ? `<div class="cap-pop">${pics}${kinds}</div>` : ''}
   </div>`;
 }
 
@@ -570,6 +652,7 @@ function taskRowHtml(x, opts) {
           ? `<label for="edit-${x.id}" class="sr-only">Modifica task</label><input id="edit-${x.id}" class="task-edit" data-model="editText" data-edit="${x.id}" value="${esc(S.ui.editText)}" enterkeyhint="done" autocomplete="off">`
           : `<button class="task-title" data-action="editTask" data-id="${x.id}" title="Tocca per modificare">${esc(x.title)}</button>`}
         ${when && !editing ? `<span class="task-when">${esc(when)}</span>` : ''}
+        ${thumbsHtml(x.images)}
       </span>
       <button class="icon-btn mind-btn" data-action="toMind" data-id="${x.id}" aria-label="Sposta nella Mente: ${esc(x.title)}" title="Sposta nella Mente">${I.mind}</button>
       <button class="icon-btn trash" data-action="deleteTask" data-id="${x.id}" aria-label="Elimina: ${esc(x.title)}">${I.trash}</button>
@@ -986,7 +1069,7 @@ function inboxListHtml(limit = 6, withActions = false, dayForPlan = null) {
   if (!items.length) return '<p class="empty">Niente da smistare.</p>';
   const lbl = dayForPlan ? dayLabel(dayForPlan) : '';
   return `<div class="list">${items.slice(0, limit).map((c) => `<div class="li">
-    <div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="tag ${c.kind}">${KIND_LABEL[c.kind]}</span></div>
+    <div class="li-main"><span class="li-title">${esc(c.body)}</span>${thumbsHtml(c.images)}<span class="tag ${c.kind}">${KIND_LABEL[c.kind]}</span></div>
     ${withActions ? `<button class="small-btn" data-action="planCapture" data-id="${c.id}">Metti ${esc(lbl)}</button>
       <button class="small-btn ghost" data-action="archiveCapture" data-id="${c.id}" aria-label="Sposta in Mente">Mente</button>` : ''}
   </div>`).join('')}</div>${items.length > limit ? `<p class="empty">+${items.length - limit} altri</p>` : ''}`;
@@ -1430,7 +1513,7 @@ function viewMente() {
   return `${headHtml('', 'Mente')}
   <div class="search">${I.search}<label for="mSearch" class="sr-only">Cerca</label><input id="mSearch" data-model="mSearch" value="${esc(u.mSearch)}" placeholder="Cerca nei tuoi pensieri…"></div>
   <div class="card">
-    <div class="list">${all.map((c) => `<div class="li" data-cap="${c.id}"><div class="li-main"><span class="li-title">${esc(c.body)}</span><span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}</span></div><button class="icon-btn m-btn" data-action="toInbox" data-id="${c.id}" aria-label="Metti da smistare: ${esc(c.body)}" title="Metti da smistare">${I.pencil}</button><button class="icon-btn m-btn" data-action="capDone" data-id="${c.id}" aria-label="Togli: ${esc(c.body)}" title="Non serve più">${I.checkBig}</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un pensiero dalla barra.</p>'}</div>
+    <div class="list">${all.map((c) => `<div class="li" data-cap="${c.id}"><div class="li-main"><span class="li-title">${esc(c.body)}</span>${thumbsHtml(c.images)}<span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}</span></div><button class="icon-btn m-btn" data-action="toInbox" data-id="${c.id}" aria-label="Metti da smistare: ${esc(c.body)}" title="Metti da smistare">${I.pencil}</button><button class="icon-btn m-btn" data-action="capDone" data-id="${c.id}" aria-label="Togli: ${esc(c.body)}" title="Non serve più">${I.checkBig}</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un pensiero dalla barra.</p>'}</div>
   </div>`;
 }
 
@@ -1473,8 +1556,9 @@ function render() {
   const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente, corpo: viewCorpo };
   const body = (views[S.view] || viewOggi)();
   const floatToast = S.ui.toast && isWide() ? toastHtml('float') : '';
-  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() || S.ui.editId ? '' : captureHtml()}${floatToast}${evEditorHtml()}</div>`;
+  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() || S.ui.editId ? '' : captureHtml()}${floatToast}${evEditorHtml()}${lightboxHtml()}</div>`;
   afterRenderNav();
+  hydrateImages();
   if (keepId) {
     const el = document.getElementById(keepId);
     if (el) {
@@ -1601,6 +1685,14 @@ const actions = {
     u.evEdit = null;
     saveEvent(e, { title, start, end });
   },
+  rmCapImg(id) {
+    const im = S.ui.capImgs.find((x) => x.id === id);
+    if (im) URL.revokeObjectURL(im.url);
+    S.ui.capImgs = S.ui.capImgs.filter((x) => x.id !== id);
+    render();
+  },
+  viewImg(path) { S.ui.viewImg = path; render(); },
+  closeImg() { S.ui.viewImg = null; render(); },
   // Da task di oggi alla Mente (il contrario di "To-do").
   async toMind(id) {
     const t = S.tasks.find((x) => x.id === id); if (!t) return;
@@ -1608,7 +1700,7 @@ const actions = {
     if (S.ui.schedId === id) S.ui.schedId = null;
     render();
     try {
-      const { data, error } = await sb.from('captures').insert({ body: t.title, kind: 'idea', status: 'archived' }).select().single();
+      const { data, error } = await sb.from('captures').insert({ body: t.title, kind: 'idea', status: 'archived', ...(t.images?.length ? { images: t.images } : {}) }).select().single();
       if (error) throw error;
       S.captures.unshift(data);
       toast('Spostata nella Mente');
@@ -1648,7 +1740,7 @@ const actions = {
   async toTodo(id) {
     const c = S.captures.find((x) => x.id === id); if (!c) return;
     try {
-      const t = await addTask(cleanTaskTitle(c.body), { source: 'inbox' });
+      const t = await addTask(cleanTaskTitle(c.body), { source: 'inbox', ...(c.images?.length ? { images: c.images } : {}) });
       S.captures = S.captures.filter((x) => x.id !== id);
       render();
       toast('Spostato nelle task di oggi');
@@ -1661,7 +1753,7 @@ const actions = {
     const day = S.view === 'calendario' ? S.ui.calSel : S.ui.weekSel;
     try {
       const prefix = c.kind === 'studio' ? 'Studiare: ' : '';
-      const t = await addTask(prefix + c.body, { due_date: day, source: 'inbox' });
+      const t = await addTask(prefix + c.body, { due_date: day, source: 'inbox', ...(c.images?.length ? { images: c.images } : {}) });
       c.status = 'planned';
       S.captures = S.captures.filter((x) => x.id !== id);
       render();
@@ -1800,7 +1892,7 @@ document.addEventListener('touchstart', (e) => {
   swipe = null;
   if (isWide() || !S.session || e.touches.length !== 1 || S.ui.editId || S.ui.evEdit || S.ui.capOpen) return;
   const t = e.target;
-  if (t.closest('.nav-bottom, .capture-wrap, input, textarea, select, .ev-sheet, [data-evkey], .fly') || scrollsX(t)) return;
+  if (t.closest('.nav-bottom, .capture-wrap, input, textarea, select, .ev-sheet, [data-evkey], .fly, .lightbox') || scrollsX(t)) return;
   const p = e.touches[0];
   swipe = { x: p.clientX, y: p.clientY, t: Date.now() };
 }, { passive: true });
@@ -1836,6 +1928,29 @@ app.addEventListener('input', (e) => {
   if (key === 'schedDay' || key === 'schedTime') render();
 });
 
+// Foto nella cattura: dal pulsante (fotocamera o libreria), incollate o trascinate sulla barra.
+app.addEventListener('change', (e) => {
+  if (e.target.id !== 'capFile') return;
+  const files = [...e.target.files]; e.target.value = '';
+  addCapImages(files);
+});
+document.addEventListener('paste', (e) => {
+  if (!S.session) return;
+  const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
+  if (!files.length) return;
+  const t = e.target;
+  // Incolla nella barra di cattura, o ovunque se non stai scrivendo in un altro campo.
+  if (t.id !== 'cap' && t.closest && t.closest('input, textarea, [contenteditable]')) return;
+  e.preventDefault();
+  addCapImages(files);
+});
+app.addEventListener('dragover', (e) => { if (e.target.closest('.capture-wrap') && [...(e.dataTransfer?.types || [])].includes('Files')) e.preventDefault(); });
+app.addEventListener('drop', (e) => {
+  if (!e.target.closest('.capture-wrap')) return;
+  e.preventDefault();
+  addCapImages(e.dataTransfer.files);
+});
+
 app.addEventListener('focusout', (e) => {
   const id = e.target.dataset?.edit;
   if (id && S.ui.editId === id) saveTaskEdit(id);
@@ -1858,7 +1973,7 @@ document.addEventListener('touchmove', (e) => { if (e.touches && e.touches.lengt
 // I tag, l'invio e il microfono stanno dentro la barra, quindi toccarli non salva.
 document.addEventListener('pointerdown', (e) => {
   if (isWide() || !S.ui.capOpen || e.target.closest('.capture-wrap')) return;
-  if (S.ui.draft.trim()) { saveCapture(); return; }
+  if (S.ui.draft.trim() || S.ui.capImgs.length) { saveCapture(); return; }
   S.ui.capOpen = false; S.ui.kind = 'auto'; stopListening();
   document.activeElement?.blur();
   render();
@@ -1886,7 +2001,7 @@ app.addEventListener('keydown', async (e) => {
 
 // Chiudi il pannello dei tag toccando fuori dalla barra di cattura (senza rubare il tocco ai pulsanti).
 document.addEventListener('click', (e) => {
-  if (!S.ui.capOpen || S.ui.draft) return;
+  if (!S.ui.capOpen || S.ui.draft || S.ui.capImgs.length) return;
   if (e.target.closest('.capture-wrap')) return;
   S.ui.capOpen = false;
   if (!e.target.closest('[data-action]')) render();
@@ -1904,6 +2019,7 @@ app.addEventListener('submit', async (e) => {
 
 // Cmd/Ctrl+K apre la cattura su computer.
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && S.ui.viewImg) { S.ui.viewImg = null; render(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); S.ui.capOpen = true; focusLater('cap'); render(); }
 });
 

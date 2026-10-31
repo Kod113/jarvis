@@ -8,13 +8,13 @@ const db = {
     { id:'t2', title:'Rinnovare assicurazione auto', done:false, due_date:ymd(today), due_time:'21:30', created_at:'2026-10-28T08:01:00Z', rescheduled_at:null },
     { id:'t3', title:'Finire modulo TryHackMe', done:false, due_date:add(2), due_time:'10:00', created_at:'2026-10-28T08:02:00Z', rescheduled_at:new Date().toISOString() },
     { id:'t5', title:'Lavare la macchina', done:false, due_date:null, due_time:null, created_at:'2026-10-28T09:00:00Z', rescheduled_at:null },
-    { id:'t6', title:'Comprare il latte', done:false, due_date:null, due_time:null, created_at:'2026-10-28T09:05:00Z', rescheduled_at:null },
+    { id:'t6', title:'Comprare il latte', images:['u1/foto1.jpg'], done:false, due_date:null, due_time:null, created_at:'2026-10-28T09:05:00Z', rescheduled_at:null },
     { id:'t4', title:'Chiamare il meccanico', done:false, due_date:add(5), due_time:'09:00', created_at:'2026-10-28T08:03:00Z', rescheduled_at:null },
   ],
   captures: [
     { id:'c1', body:'Zero-knowledge proof', kind:'studio', status:'inbox', created_at:new Date().toISOString() },
     { id:'c2', body:'Idea per il sync Garmin', kind:'idea', status:'inbox', created_at:new Date().toISOString() },
-    { id:'c4', body:'App per tracciare i libri letti', kind:'idea', status:'archived', created_at:new Date().toISOString() },
+    { id:'c4', body:'App per tracciare i libri letti', images:['u1/foto2.jpg','u1/foto3.jpg'], kind:'idea', status:'archived', created_at:new Date().toISOString() },
     { id:'c3', body:'"La disciplina è scegliere tra ciò che vuoi ora e ciò che vuoi di più"', kind:'frase', status:'archived', created_at:new Date().toISOString() },
   ],
   expenses: [
@@ -78,6 +78,10 @@ export function createClient(){
         return { data: { ok: true }, error: null };
       }
     },
+    storage: { from(){ return {
+      async upload(path){ (window.__uploads = window.__uploads || []).push(path); return { data:{ path }, error:null }; },
+      async createSignedUrls(paths){ return { data: paths.map(p => ({ path:p, signedUrl:'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140"><rect width="200" height="140" fill="#4a6fa5"/><circle cx="60" cy="50" r="18" fill="#fff"/></svg>') })), error:null }; }
+    }; } },
     from: q,
     auth: {
       onAuthStateChange(cb){ setTimeout(()=>cb('INITIAL_SESSION', window.__NOSESSION ? null : session), 0); return { data:{ subscription:{ unsubscribe(){} } } }; },
