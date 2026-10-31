@@ -67,7 +67,7 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - Spunti: tag To-do e Idea (Frase tolto; le frasi vecchie restano nella Mente come idee). Senza tag vale la pagina (`defaultKind()`): in Oggi → to-do,
   altrove → idea nella Mente (capture `status='archived'`). Mente mostra solo capture `archived`; ogni voce ha la matita (azione `toInbox`: va in
   "Da smistare" di Settimana, `status='inbox'`, con la voce che vola verso Settimana) e la spunta (azione `capDone`: scorre a destra e sparisce;
-  non si cancella, va a `status='planned'` senza task perché il vincolo `captures_status_check` non ha ancora 'done'). Ogni task di oggi ha il
+  non si cancella, va a `status='done'`). Ogni task di oggi ha il
   pulsante Mente (azione `toMind`). `classify()` non è più usata. Mentre modifichi una task la pillola di cattura sparisce.
 - Navigazione telefono: swipe orizzontale nella pagina = sezione dopo/prima (esclusi barra, cattura, campi, eventi, elementi scorrevoli).
   Toccare la sezione già aperta torna in cima; toccare Settimana riporta sempre il selettore su oggi.

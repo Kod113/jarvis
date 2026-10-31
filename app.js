@@ -1641,7 +1641,7 @@ const actions = {
         row.animate([{ height: h + 'px', minHeight: h + 'px' }, { height: '0px', minHeight: '0px', borderTopWidth: '0px' }], { duration: 200, easing: 'ease-out', fill: 'forwards' }).onfinish = finish;
       };
     } else finish();
-    const { error } = await sb.from('captures').update({ status: 'planned' }).eq('id', id);
+    const { error } = await sb.from('captures').update({ status: 'done' }).eq('id', id);
     if (error) { S.captures.unshift(c); render(); fail(error); }
   },
   // Dalla Mente alle task di oggi con un tocco.
