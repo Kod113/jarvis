@@ -189,14 +189,44 @@ const isWide = () => wideMq.matches;
 
 let toastTimer = null;
 let toastUndo = null;
-function toast(msg, undo = null) {
+let toastAct = null;   // pulsante momentaneo nella notifica: { label, run }
+function toast(msg, undo = null, act = null) {
   S.ui.toast = msg;
   toastUndo = undo;
+  toastAct = act;
   render();
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { S.ui.toast = ''; toastUndo = null; render(); }, undo ? 4500 : 2800);
+  toastTimer = setTimeout(() => { S.ui.toast = ''; toastUndo = null; toastAct = null; render(); }, undo || act ? 4500 : 2800);
 }
-const toastHtml = (cls) => `<p class="toast ${cls}" role="status">${esc(S.ui.toast)}${toastUndo ? ' <button class="toast-undo" data-action="undo">Annulla</button>' : ''}</p>`;
+const toastHtml = (cls) => `<p class="toast ${cls}" role="status">${esc(S.ui.toast)}${toastUndo ? ' <button class="toast-undo" data-action="undo">Annulla</button>' : ''}${toastAct ? ` <button class="toast-act" data-action="toastAct">${esc(toastAct.label)}</button>` : ''}</p>`;
+// "Smista ora": apre Settimana e scorre fino a "Da smistare", che pulsa un attimo.
+function openInbox() {
+  actions.go('settimana');
+  requestAnimationFrame(() => setTimeout(() => {
+    const card = document.getElementById('inboxCard'); if (!card) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.remove('pulse'); void card.offsetWidth; card.classList.add('pulse');
+    setTimeout(() => card.classList.remove('pulse'), 1400);
+  }, 260));
+}
+// Una voce smistata esce dalla lista: si accende, sale e svanisce, poi la riga si chiude.
+function smistaOut(row, done) {
+  if (!row || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { done(); return; }
+  const h = row.offsetHeight;
+  row.style.pointerEvents = 'none';
+  const hex = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim().replace('#', '');
+  const tint = hex.length === 6 ? `rgba(${parseInt(hex.slice(0, 2), 16)}, ${parseInt(hex.slice(2, 4), 16)}, ${parseInt(hex.slice(4, 6), 16)}, .14)` : 'rgba(46, 91, 219, .14)';
+  row.style.borderRadius = '12px';
+  row.animate([
+    { transform: 'none', opacity: 1, backgroundColor: 'rgba(0,0,0,0)' },
+    { transform: 'none', opacity: 1, backgroundColor: tint, offset: 0.35 },
+    { transform: 'translateY(-10px) scale(.94)', opacity: 0, backgroundColor: tint }
+  ], { duration: 380, easing: 'cubic-bezier(.3, 0, .2, 1)', fill: 'forwards' }).onfinish = () => {
+    row.style.overflow = 'hidden';
+    row.animate([{ height: h + 'px', minHeight: h + 'px' }, { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', borderTopWidth: '0px' }],
+      { duration: 220, easing: 'ease-out', fill: 'forwards' }).onfinish = done;
+  };
+}
 function fail(err) {
   console.error(err);
   toast('Errore: ' + (err?.message || 'qualcosa è andato storto'));
@@ -1065,10 +1095,10 @@ function inboxBarHtml() {
 }
 
 function inboxListHtml(limit = 6, withActions = false, dayForPlan = null) {
-  const items = inbox();
+  const items = inbox().filter((c) => !c._out); // quelle in uscita: se si ridisegna a metà animazione non ricompaiono
   if (!items.length) return '<p class="empty">Niente da smistare.</p>';
   const lbl = dayForPlan ? dayLabel(dayForPlan) : '';
-  return `<div class="list">${items.slice(0, limit).map((c) => `<div class="li">
+  return `<div class="list">${items.slice(0, limit).map((c) => `<div class="li" data-inbox="${c.id}">
     <div class="li-main"><span class="li-title">${esc(c.body)}</span>${thumbsHtml(c.images)}<span class="tag ${c.kind}">${KIND_LABEL[c.kind]}</span></div>
     ${withActions ? `<button class="small-btn" data-action="planCapture" data-id="${c.id}">Metti ${esc(lbl)}</button>
       <button class="small-btn ghost" data-action="archiveCapture" data-id="${c.id}" aria-label="Sposta in Mente">Mente</button>` : ''}
@@ -1331,7 +1361,7 @@ function viewSettimana() {
     ${list.map(taskRowHtml).join('')}
     ${!list.length && !dayEvs.length ? '<p class="empty">Niente in programma.</p>' : ''}
   </div>
-  <div class="card">
+  <div class="card" id="inboxCard">
     <p class="card-label"><span>Inbox · da smistare</span><span class="mono">${inbox().length}</span></p>
     ${inboxListHtml(50, true, u.weekSel)}
   </div>
@@ -1718,7 +1748,12 @@ const actions = {
     if (row) flyCapture(c.body, 'settimana', row.querySelector('.li-title') || row);
     c.status = 'inbox'; render();
     const { error } = await sb.from('captures').update({ status: 'inbox' }).eq('id', id);
-    if (error) { c.status = 'archived'; render(); fail(error); } else toast('Messo da smistare');
+    if (error) { c.status = 'archived'; render(); fail(error); }
+    else toast('Spostato in Da smistare', null, { label: 'Smista ora →', run: openInbox });
+  },
+  toastAct() {
+    const a = toastAct; toastAct = null; toastUndo = null; S.ui.toast = ''; clearTimeout(toastTimer);
+    if (a) a.run(); else render();
   },
   // Non serve più: la voce scorre a destra e sparisce (non si cancella: esce dalla Mente).
   async capDone(id) {
@@ -1748,25 +1783,32 @@ const actions = {
       if (error) throw error;
     } catch (err) { fail(err); }
   },
+  // Smistata: la riga si accende, sale e sparisce (animazione diversa dalla spunta della Mente).
   async planCapture(id) {
-    const c = S.captures.find((x) => x.id === id); if (!c) return;
+    const c = S.captures.find((x) => x.id === id); if (!c || c._out) return;
     const day = S.view === 'calendario' ? S.ui.calSel : S.ui.weekSel;
+    c._out = true;
+    const gone = new Promise((r) => smistaOut(app.querySelector(`[data-inbox="${id}"]`), r));
     try {
       const prefix = c.kind === 'studio' ? 'Studiare: ' : '';
       const t = await addTask(prefix + c.body, { due_date: day, source: 'inbox', ...(c.images?.length ? { images: c.images } : {}) });
+      await gone;
       c.status = 'planned';
       S.captures = S.captures.filter((x) => x.id !== id);
       render();
+      toast(`Messo ${dayLabel(day)}`);
       const { error } = await sb.from('captures').update({ status: 'planned', planned_task_id: t.id }).eq('id', id);
       if (error) throw error;
-      toast(`Messo ${dayLabel(day)}`);
-    } catch (err) { fail(err); }
+    } catch (err) { delete c._out; render(); fail(err); }
   },
   async archiveCapture(id) {
-    const c = S.captures.find((x) => x.id === id); if (!c) return;
+    const c = S.captures.find((x) => x.id === id); if (!c || c._out) return;
+    c._out = true;
+    await new Promise((r) => smistaOut(app.querySelector(`[data-inbox="${id}"]`), r));
+    delete c._out;
     c.status = 'archived'; render();
     const { error } = await sb.from('captures').update({ status: 'archived' }).eq('id', id);
-    if (error) fail(error); else toast('Spostato in Mente');
+    if (error) { c.status = 'inbox'; render(); fail(error); } else toast('Spostato in Mente');
   },
   spMonth(id) { S.ui.spMonth = Math.min(0, S.ui.spMonth + Number(id)); render(); },
   addExpense() {

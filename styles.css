@@ -170,6 +170,11 @@ button.task-title { border: 0; background: transparent; padding: 0; text-align: 
 .icon-btn.trash { width: 36px; color: var(--faint); }
 .icon-btn.trash:hover { color: #C4362B; }
 .toast-undo { margin-left: 10px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; padding: 0; }
+.toast-act { margin-left: 10px; border: 0; border-radius: 999px; background: var(--accent-ink); color: var(--accent); font: inherit; font-weight: 600; padding: 4px 10px; cursor: pointer; animation: toast-act-in .35s cubic-bezier(.2, .8, .2, 1.2) both .12s; }
+.toast:has(.toast-act) { display: flex; align-items: center; padding: 5px 5px 5px 14px; }
+@keyframes toast-act-in { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: none; } }
+@keyframes inbox-pulse { 0% { box-shadow: var(--shadow), 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); } 100% { box-shadow: var(--shadow), 0 0 0 16px transparent; } }
+#inboxCard.pulse { animation: inbox-pulse .7s ease-out 2; }
 .check { width: 20px; height: 20px; flex: none; border-radius: 6px; border: 1.5px solid var(--check-off); display: flex; align-items: center; justify-content: center; }
 .task.done .check { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .task-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
