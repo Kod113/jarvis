@@ -2023,6 +2023,21 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); S.ui.capOpen = true; focusLater('cap'); render(); }
 });
 
+// Scrivi ovunque → va nella cattura. Se non stai già scrivendo in un campo, il primo tasto apre "Cattura qualcosa…"
+// con quella lettera dentro; i tasti successivi finiscono lì da soli. Vale con ogni tastiera fisica (computer, iPad, iPhone).
+document.addEventListener('keydown', (e) => {
+  if (!S.session || e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey) return;
+  if (e.key.length !== 1 || e.key === ' ') return;               // solo caratteri stampabili (niente frecce, Invio, spazio iniziale)
+  const t = e.target;
+  if (t && t.closest && t.closest('input, textarea, select, [contenteditable]')) return; // stai già scrivendo altrove
+  if (S.ui.editId || S.ui.evEdit || S.ui.viewImg || !document.getElementById('cap')) return;
+  e.preventDefault();
+  S.ui.draft += e.key;
+  S.ui.capOpen = true;
+  focusLater('cap');
+  render();
+});
+
 wideMq.addEventListener('change', render);
 
 // ---------------------------------------------------------------- Avvio
