@@ -43,6 +43,21 @@ with sync_playwright() as p:
             if v=='settimana':
                 pg.click('[data-action="planCapture"] >> nth=0'); pg.wait_for_timeout(150)
             pg.screenshot(path=f'{out}/{name}-{v}.png', full_page=True)
+            if v=='mente':
+                pg.click('[data-action="editCap"] >> nth=0'); pg.wait_for_timeout(100)
+                pg.keyboard.press('End'); pg.keyboard.type(' (rivisto)'); pg.keyboard.press('Enter'); pg.wait_for_timeout(200)
+                pg.fill('#bSearch', 'casa'); pg.wait_for_timeout(150)
+                pg.screenshot(path=f'{out}/{name}-mente-search.png', full_page=True)
+                pg.click('[data-action="toBrain"] >> nth=0'); pg.wait_for_timeout(900)
+                pg.screenshot(path=f'{out}/{name}-mente-cloud.png', full_page=True)
+                pg.click('[data-action="openNote"] >> nth=0'); pg.wait_for_timeout(150)
+                pg.click('[data-action="editNote"]'); pg.wait_for_timeout(150)
+                pg.fill('#neBody', 'ZONA\nnatura\nparco per correre\n[ ] chiedere al proprietario'); pg.wait_for_timeout(50)
+                pg.screenshot(path=f'{out}/{name}-note-edit.png', full_page=False)
+                pg.click('[data-action="saveNote"]'); pg.wait_for_timeout(300)
+                pg.screenshot(path=f'{out}/{name}-note-saved.png', full_page=False)
+                pg.click('[data-action="closeNote"] >> nth=1'); pg.wait_for_timeout(100)
+                pg.fill('#bSearch', ''); pg.wait_for_timeout(50)
         print(name, 'errors:', errs)
         pg.close()
     # login + dark

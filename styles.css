@@ -596,3 +596,19 @@ mark { background: var(--soft); color: var(--soft-ink, var(--ink)); border-radiu
 .note-foot .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
 
 .brain-acts .mini-btn { width: 34px; height: 34px; border-radius: 10px; }
+
+/* Second brain: ricerca nella scheda, editor delle note, pensieri modificabili */
+.brain-search { background: var(--bg); min-height: 44px; }
+.note-top .icon-btn:first-of-type { margin-left: auto; }
+.note-edit .ne-body { display: flex; flex-direction: column; gap: 12px; padding-top: 6px; }
+.ne-title { font: inherit; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; border: 0; border-bottom: 1.5px solid var(--line); outline: 0; background: transparent; color: var(--ink); padding: 6px 0; }
+.ne-title:focus { border-bottom-color: var(--accent); }
+.ne-areas { flex-wrap: wrap; }
+.ne-areas .chip { min-height: 32px; font-size: 12px; }
+.ne-area-new input { border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: 16px; width: 92px; padding: 0; }
+.ne-text { flex: 1; min-height: 46vh; resize: none; font: inherit; font-size: 16px; line-height: 1.55; border: 1px solid var(--line-2); border-radius: 12px; padding: 12px; background: var(--bg); color: var(--ink); outline: 0; }
+.ne-text:focus { border-color: var(--accent); }
+@media (min-width: 1000px) { .ne-text { min-height: 40vh; } }
+[data-cap] button.li-title { display: block; width: 100%; border: 0; background: transparent; padding: 0; text-align: left; color: var(--ink); font: inherit; font-size: 15px; cursor: text; overflow-wrap: anywhere; }
+[data-cap] .m-btn { width: 36px; padding: 0; }
+.sync-note svg { vertical-align: -2px; }

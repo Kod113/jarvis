@@ -77,7 +77,15 @@ export function createClient(){
       async invoke(name, { body }) {
         (window.__calls = window.__calls || []).push([name, body]);
         if (name === 'notion-sync') return { data: body.action === 'archive' ? { ok: true } : { ok: true, pushed: 1, imported: 0, remaining: 0 }, error: null };
-        if (name === 'brain') return { data: { ok: true, total: 14, updated: 0, remaining: 0 }, error: null };
+        if (name === 'brain') {
+          if (body.action === 'saveNote' || body.action === 'toBrain') {
+            const c = body.captureId && db.captures.find(x => x.id === body.captureId);
+            const note = { id: body.id || 'bn' + Date.now(), title: body.title || (c ? c.body : 'Nota'), body: body.body || '', area: body.area || null, edited_at: ymd(new Date()), has_images: false, notion_url: 'https://www.notion.so/n' };
+            return { data: { ok: true, note }, error: null };
+          }
+          if (body.action === 'thoughts') return { data: { ok: true, pushed: 0, pulled: 0, created: 0, imported: 0, removed: 0 }, error: null };
+          return { data: { ok: true, total: 14, updated: 0, remaining: 0, thoughts: { ok: true } }, error: null };
+        }
         if (name === 'garmin-refresh') return { data: { status: 'started' }, error: null };
         if (body.action === 'status') return { data: gstate, error: null };
         if (body.action === 'events') return { data: { events: gstate.connected ? events : [] }, error: null };

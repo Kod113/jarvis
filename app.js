@@ -64,6 +64,7 @@ const I = {
   run: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="15" cy="4.5" r="2"/><path d="M13.5 8 10.5 13l3.5 2.5-1 5"/><path d="M10.5 13 8 17H4.5"/><path d="m13.5 8 3.5 2.5 2.5-1.5"/><path d="M13.5 8 10 8.5 8 10.5"/></svg>',
   barbell: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h20"/><rect x="5" y="7" width="3" height="10" rx="1"/><rect x="16" y="7" width="3" height="10" rx="1"/><path d="M3.5 9.5v5M20.5 9.5v5"/></svg>',
   checkBig: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  cloud: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 19a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.8 9 4.6 4.6 0 0 1 17.5 19z"/></svg>',
   refresh: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></svg>',
   gauge: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 18.5a9 9 0 1 1 15 0"/><path d="M12 14l4-5"/><circle cx="12" cy="14" r="1.6"/></svg>',
   trash: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
@@ -182,7 +183,9 @@ const S = {
     weekOffset: 0, weekSel: todayYmd(),
     monthOffset: 0, calSel: todayYmd(),
     spMonth: 0, adding: false, exAmount: '', exDesc: '', exCat: 'Cibo', exMethod: 'manual',
-    mFilter: 'tutto', mSearch: '', noteId: null, bArea: '', bAll: false,
+    mFilter: 'tutto', bSearch: '', noteId: null, bArea: '', bAll: false,
+    // Modifica nota (neId = id della nota o 'new' per una nota nuova)
+    neId: null, neTitle: '', neArea: '', neBody: '', neBusy: false,
     editId: null, editText: '',
     loginErr: '', loginBusy: false
   }
@@ -265,9 +268,35 @@ async function loadNotes() {
   if (error) { console.warn('brain_notes', error.message); return; }
   S.notes = data || [];
 }
+async function loadCaptures() {
+  const { data, error } = await sb.from('captures').select('*').in('status', ['inbox', 'archived']).order('created_at', { ascending: false }).limit(1000);
+  if (!error) S.captures = data || [];
+}
+// Funzione "brain" con il messaggio d'errore leggibile.
+async function brainCall(action, payload = {}) {
+  const { data, error } = await sb.functions.invoke('brain', { body: { action, ...payload } });
+  if (error) { let m = error.message; try { const b = await error.context.json(); m = b.hint || b.error || m; } catch { /* */ } throw new Error(m); }
+  if (data?.status === 'not_configured') throw new Error('Notion non è collegato');
+  return data;
+}
+// Pensieri ↔ Notion: dopo ogni modifica nella Mente, allinea il database "Pensieri" (raggruppa le modifiche vicine).
+let thoughtTimer = null, thoughtBusy = false;
+function thoughtSync(delay = 1500) {
+  clearTimeout(thoughtTimer);
+  thoughtTimer = setTimeout(async () => {
+    if (S.brain.state === 'running' || thoughtBusy) { thoughtSync(2000); return; } // una sincronizzazione alla volta
+    thoughtBusy = true;
+    try {
+      const r = await brainCall('thoughts');
+      if (r.pulled || r.imported || r.removed) { await loadCaptures(); if (!S.ui.editId) render(); }
+    } catch (err) { console.warn('pensieri → Notion', err.message); }
+    thoughtBusy = false;
+  }, delay);
+}
 // Aggiorna la copia delle note da Notion (funzione "brain"); in automatico al massimo ogni 10 minuti aprendo la Mente.
 async function brainSync(manual = false) {
   if (S.brain.state === 'running') return;
+  if (thoughtBusy) { setTimeout(() => brainSync(manual), 1500); return; }
   S.brain.state = 'running'; render();
   try {
     let r;
@@ -279,6 +308,7 @@ async function brainSync(manual = false) {
     }
     S.brain = { state: r.status === 'not_configured' ? 'off' : 'ok', lastSync: Date.now(), msg: '' };
     await loadNotes();
+    if (r.thoughts && (r.thoughts.pulled || r.thoughts.imported || r.thoughts.removed)) await loadCaptures();
     render();
     if (manual) toast(r.updated ? `Note aggiornate da Notion: ${r.updated}` : 'Le note sono già aggiornate');
   } catch (err) {
@@ -499,6 +529,7 @@ async function saveCapture() {
       const { data, error } = await sb.from('captures').insert({ body: title, kind, status: 'archived', ...extra }).select().single();
       if (error) throw error;
       S.captures.unshift(data);
+      thoughtSync();
     }
     toast(kind === 'task' ? 'Salvato nei To-do' : 'Salvato nella Mente');
   } catch (err) { fail(err); }
@@ -1642,8 +1673,10 @@ function noteRowHtml(n, words) {
     <span class="li-meta">${esc(n.area || 'Senza area')} · ${noteDate(n.edited_at)}${n.has_images ? ' · con immagini' : ''}</span></div>
   </button>`;
 }
-function brainCardHtml(words) {
+function brainCardHtml() {
   const u = S.ui;
+  const q = u.bSearch.trim();
+  const words = qWords(q);
   const notes = S.notes || [];
   const areas = [...new Set(notes.map((n) => n.area).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
   const pool = notes.filter((n) => !u.bArea || n.area === u.bArea);
@@ -1658,30 +1691,60 @@ function brainCardHtml(words) {
   const shown = words.length || u.bAll ? list.slice(0, 200) : list.slice(0, LIMIT);
   const syncLine = S.brain.state === 'running' ? 'Aggiorno da Notion…'
     : S.brain.state === 'error' ? esc(S.brain.msg || 'Notion non raggiungibile')
-    : S.brain.lastSync ? 'Aggiornato da Notion' : '';
+    : S.brain.lastSync ? 'Collegato a Notion · le modifiche valgono dai due lati' : '';
   return `<div class="card brain">
     <div class="brain-head">
       <div><p class="card-label">Second brain</p><p class="brain-count">${label}</p></div>
       <div class="brain-acts">
+        <button class="mini-btn" data-action="newNote" aria-label="Nuova nota" title="Nuova nota">${I.plus}</button>
         <button class="mini-btn ${S.brain.state === 'running' ? 'spin' : ''}" data-action="brainSync" aria-label="Aggiorna da Notion" title="Aggiorna da Notion">${I.refresh}</button>
-        <a class="btn notion-link" href="${SECOND_BRAIN_URL}" target="_blank" rel="noopener">Apri in Notion ${I.ext}</a>
+        <a class="btn notion-link" href="${SECOND_BRAIN_URL}" target="_blank" rel="noopener">Notion ${I.ext}</a>
       </div>
     </div>
+    <div class="search brain-search">${I.search}<label for="bSearch" class="sr-only">Cerca nel second brain</label><input id="bSearch" type="search" data-model="bSearch" value="${esc(u.bSearch)}" placeholder="Cerca nel second brain…" autocomplete="off" enterkeyhint="search">${q ? `<button class="mini-btn clear-q" data-action="clearSearch" aria-label="Cancella ricerca">${I.x}</button>` : ''}</div>
     ${areas.length ? `<div class="chips area-chips">${areas.map((a) => `<button class="chip ${u.bArea === a ? 'on' : ''}" data-action="bArea" data-id="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}
     <div class="list">${shown.map((n) => noteRowHtml(n, words)).join('') || `<p class="empty">${notes.length ? 'Nessuna nota corrisponde.' : 'Le note di Notion compariranno qui dopo il primo aggiornamento.'}</p>`}</div>
     ${!words.length && list.length > LIMIT ? `<button class="btn ghost more" data-action="bAll">${u.bAll ? 'Mostra meno' : `Mostra tutte (${list.length})`}</button>` : ''}
     ${syncLine ? `<p class="sync-note">${syncLine}</p>` : ''}
   </div>`;
 }
+// Modifica (o creazione) di una nota: titolo, area e testo vanno su Notion al salvataggio.
+function noteEditorHtml() {
+  const u = S.ui;
+  const n = u.neId !== 'new' && (S.notes || []).find((x) => x.id === u.neId);
+  const areas = [...new Set((S.notes || []).map((x) => x.area).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  return `<div class="ev-sheet-bg" data-action="cancelNoteEdit"></div>
+  <article class="note-sheet card note-edit" role="dialog" aria-modal="true" aria-label="${n ? 'Modifica nota' : 'Nuova nota'}">
+    <header class="note-top">
+      <div class="note-meta"><span class="note-area">${n ? 'Modifica nota' : 'Nuova nota'}</span><span>va su Notion</span></div>
+      <button class="icon-btn" data-action="cancelNoteEdit" aria-label="Annulla">${I.x}</button>
+    </header>
+    <div class="note-body ne-body">
+      <label for="neTitle" class="sr-only">Titolo</label>
+      <input id="neTitle" class="ne-title" data-model="neTitle" value="${esc(u.neTitle)}" placeholder="Titolo" autocomplete="off" enterkeyhint="next">
+      <div class="chips ne-areas">${areas.map((a) => `<button class="chip ${u.neArea === a ? 'on' : ''}" data-action="neArea" data-id="${esc(a)}">${esc(a)}</button>`).join('')}
+        <label class="chip ne-area-new ${u.neArea && !areas.includes(u.neArea) ? 'on' : ''}"><span class="sr-only">Nuova area</span><input id="neArea" data-model="neArea" value="${esc(areas.includes(u.neArea) ? '' : u.neArea)}" placeholder="+ area" autocomplete="off"></label></div>
+      <label for="neBody" class="sr-only">Testo</label>
+      <textarea id="neBody" class="ne-text" data-model="neBody" placeholder="Scrivi… ([ ] per una casella, • per un elenco)">${esc(u.neBody)}</textarea>
+      ${n?.has_images ? '<p class="note-img-hint">Le immagini restano su Notion al loro posto.</p>' : ''}
+    </div>
+    <footer class="note-foot">
+      <button class="btn grow" data-action="cancelNoteEdit">Annulla</button>
+      <button class="btn primary grow2" data-action="saveNote" ${u.neBusy ? 'disabled' : ''}>${u.neBusy ? 'Salvo su Notion…' : 'Salva'}</button>
+    </footer>
+  </article>`;
+}
 // Lettore della nota: foglio a tutto schermo su telefono, finestra centrale su computer.
 function noteReaderHtml() {
+  if (S.ui.neId) return noteEditorHtml();
   const n = S.ui.noteId && (S.notes || []).find((x) => x.id === S.ui.noteId);
   if (!n) return '';
-  const words = qWords(S.ui.mSearch);
+  const words = qWords(S.ui.bSearch);
   return `<div class="ev-sheet-bg" data-action="closeNote"></div>
   <article class="note-sheet card" role="dialog" aria-modal="true" aria-label="${esc(n.title)}">
     <header class="note-top">
       <div class="note-meta"><span class="note-area">${esc(n.area || 'Nota')}</span><span>${noteDate(n.edited_at)}</span></div>
+      <button class="icon-btn" data-action="editNote" data-id="${n.id}" aria-label="Modifica nota" title="Modifica">${I.pencil}</button>
       <button class="icon-btn" data-action="closeNote" aria-label="Chiudi">${I.x}</button>
     </header>
     <h2 class="note-title">${markHtml(n.title, words)}</h2>
@@ -1694,20 +1757,29 @@ function noteReaderHtml() {
   </article>`;
 }
 
+function thoughtRowHtml(c) {
+  const editing = S.ui.editId === c.id;
+  return `<div class="li" data-cap="${c.id}"><div class="li-main">
+    ${editing
+      ? `<label for="edit-${c.id}" class="sr-only">Modifica pensiero</label><input id="edit-${c.id}" class="task-edit" data-model="editText" data-edit="${c.id}" value="${esc(S.ui.editText)}" enterkeyhint="done" autocomplete="off">`
+      : `<button class="task-title li-title" data-action="editCap" data-id="${c.id}" title="Tocca per modificare">${esc(c.body)}</button>`}
+    ${thumbsHtml(c.images)}<span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}</span></div>
+    <button class="icon-btn m-btn" data-action="toBrain" data-id="${c.id}" aria-label="Nel second brain: ${esc(c.body)}" title="Smista nel second brain">${I.cloud}</button>
+    <button class="icon-btn m-btn" data-action="toInbox" data-id="${c.id}" aria-label="Metti da smistare: ${esc(c.body)}" title="Metti da smistare">${I.pencil}</button>
+    <button class="icon-btn m-btn" data-action="capDone" data-id="${c.id}" aria-label="Togli: ${esc(c.body)}" title="Non serve più">${I.checkBig}</button></div>`;
+}
+
 function viewMente() {
-  const u = S.ui;
-  const q = u.mSearch.trim();
-  const words = qWords(q);
-  // Frasi e idee trattate allo stesso modo: sono pensieri, da tenere qui o spostare nei To-do.
-  const all = S.captures.filter((c) => c.kind !== 'task' && c.status === 'archived' && (!words.length || words.every((w) => fold(c.body).includes(w))));
+  // Frasi e idee trattate allo stesso modo: sono pensieri, da tenere qui, mandare nel second brain o spostare nei To-do.
+  const all = S.captures.filter((c) => c.kind !== 'task' && c.status === 'archived');
   const thoughts = `<div class="card">
-    <p class="card-label">Pensieri</p>
-    <div class="list">${all.map((c) => `<div class="li" data-cap="${c.id}"><div class="li-main"><span class="li-title">${markHtml(c.body, words)}</span>${thumbsHtml(c.images)}<span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}</span></div><button class="icon-btn m-btn" data-action="toInbox" data-id="${c.id}" aria-label="Metti da smistare: ${esc(c.body)}" title="Metti da smistare">${I.pencil}</button><button class="icon-btn m-btn" data-action="capDone" data-id="${c.id}" aria-label="Togli: ${esc(c.body)}" title="Non serve più">${I.checkBig}</button></div>`).join('') || `<p class="empty">${words.length ? 'Nessun pensiero corrisponde.' : 'Niente qui, per ora. Cattura un pensiero dalla barra.'}</p>`}</div>
+    <div class="brain-head"><p class="card-label">Pensieri</p><a class="btn notion-link" href="${SECOND_BRAIN_URL}" target="_blank" rel="noopener">Notion ${I.ext}</a></div>
+    <div class="list">${all.map(thoughtRowHtml).join('') || '<p class="empty">Niente qui, per ora. Cattura un pensiero dalla barra.</p>'}</div>
+    ${all.length ? `<p class="sync-note">Tocca un pensiero per modificarlo · ${I.cloud.replace('width="20" height="20"', 'width="13" height="13"')} lo manda nel second brain</p>` : ''}
   </div>`;
   return `${headHtml('', 'Mente')}
-  <div class="search">${I.search}<label for="mSearch" class="sr-only">Cerca</label><input id="mSearch" type="search" data-model="mSearch" value="${esc(u.mSearch)}" placeholder="Cerca nelle note e nei pensieri…" autocomplete="off" enterkeyhint="search">${q ? `<button class="mini-btn clear-q" data-action="clearSearch" aria-label="Cancella ricerca">${I.x}</button>` : ''}</div>
   <div class="mente-grid">
-    ${words.length ? brainCardHtml(words) + thoughts : thoughts + brainCardHtml(words)}
+    ${thoughts}${brainCardHtml()}
   </div>`;
 }
 
@@ -1741,6 +1813,7 @@ function afterRenderNav() {
   lastView = S.view;
 }
 const app = document.getElementById('app');
+let rendering = false; // mentre si ridisegna, il campo in modifica perde il fuoco: non è un salvataggio
 function render() {
   if (S.loading) { app.innerHTML = '<div class="boot">Jarvis</div>'; return; }
   if (!S.session) { app.innerHTML = viewLogin(); return; }
@@ -1750,7 +1823,10 @@ function render() {
   const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente, corpo: viewCorpo };
   const body = (views[S.view] || viewOggi)();
   const floatToast = S.ui.toast && isWide() ? toastHtml('float') : '';
+  rendering = true;
+  try {
   app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() || S.ui.editId ? '' : captureHtml()}${floatToast}${evEditorHtml()}${noteReaderHtml()}${lightboxHtml()}</div>`;
+  } finally { rendering = false; }
   afterRenderNav();
   hydrateImages();
   if (keepId) {
@@ -1771,16 +1847,67 @@ const actions = {
     if (id === S.view) { render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300);
     if (id === 'mente' && Date.now() - S.brain.lastSync > 10 * 60 * 1000) setTimeout(() => brainSync(false), 300);
+    else if (id === 'mente') thoughtSync(300); // pensieri scritti o cambiati su Notion
     S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
   // Un tag si seleziona e si deseleziona: senza tag vale la pagina (Oggi → To-do, altrove → Mente).
   kind(id) { S.ui.kind = S.ui.kind === id ? 'auto' : id; focusLater('cap'); render(); },
   // Second brain
   openNote(id) { S.ui.noteId = id; document.activeElement?.blur(); render(); },
   closeNote() { S.ui.noteId = null; render(); },
+  editNote(id) {
+    const n = (S.notes || []).find((x) => x.id === id); if (!n) return;
+    Object.assign(S.ui, { neId: id, neTitle: n.title, neArea: n.area || '', neBody: n.body || '', neBusy: false });
+    focusLater('neBody'); render();
+  },
+  newNote() {
+    Object.assign(S.ui, { neId: 'new', neTitle: '', neArea: S.ui.bArea || '', neBody: '', neBusy: false, noteId: null });
+    focusLater('neTitle'); render();
+  },
+  cancelNoteEdit() { S.ui.neId = null; render(); },
+  neArea(id) { S.ui.neArea = S.ui.neArea === id ? '' : id; render(); },
+  async saveNote() {
+    const u = S.ui; if (u.neBusy) return;
+    const id = u.neId === 'new' ? null : u.neId;
+    if (!u.neTitle.trim() && !u.neBody.trim()) { u.neId = null; render(); return; }
+    u.neBusy = true; render();
+    try {
+      const r = await brainCall('saveNote', { id, title: u.neTitle, area: u.neArea.trim(), body: u.neBody });
+      const n = r.note;
+      S.notes = [n, ...(S.notes || []).filter((x) => x.id !== n.id)];
+      Object.assign(S.ui, { neId: null, neBusy: false, noteId: n.id });
+      toast(id ? 'Nota salvata su Notion' : 'Nota creata su Notion');
+    } catch (err) { u.neBusy = false; render(); toast('Notion: ' + err.message); }
+  },
+  editCap(id) {
+    const c = S.captures.find((x) => x.id === id); if (!c) return;
+    S.ui.editId = id; S.ui.editText = c.body; focusLater('edit-' + id); render();
+  },
+  // Nuvola: il pensiero diventa una nota del second brain (su Notion, con le sue foto) ed esce dai Pensieri.
+  async toBrain(id) {
+    const c = S.captures.find((x) => x.id === id); if (!c || c._out) return;
+    c._out = true;
+    const row = app.querySelector(`[data-cap="${id}"]`);
+    const target = app.querySelector('.card.brain');
+    if (row && target && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const a = row.getBoundingClientRect(), t = target.getBoundingClientRect();
+      row.style.position = 'relative'; row.style.zIndex = '5';
+      row.animate([{ transform: 'translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(${(t.left + t.width / 2) - (a.left + a.width / 2)}px, ${(t.top + 40) - a.top}px) scale(.3)`, opacity: 0 }],
+        { duration: 520, easing: 'cubic-bezier(.45, 0, .25, 1)', fill: 'forwards' });
+    }
+    await new Promise((r) => setTimeout(r, 480));
+    S.captures = S.captures.filter((x) => x.id !== id); render();
+    try {
+      const r = await brainCall('toBrain', { captureId: id });
+      S.notes = [r.note, ...(S.notes || []).filter((x) => x.id !== r.note.id)];
+      render();
+      toast(r.lostImages ? 'Nel second brain (alcune foto non sono passate)' : 'Nel second brain', null, { label: 'Apri →', run: () => { S.ui.noteId = r.note.id; render(); } });
+    } catch (err) { delete c._out; S.captures.unshift(c); S.captures.sort((x, y) => y.created_at.localeCompare(x.created_at)); render(); toast('Notion: ' + err.message); }
+  },
   bArea(id) { S.ui.bArea = S.ui.bArea === id ? '' : id; S.ui.bAll = false; render(); },
   bAll() { S.ui.bAll = !S.ui.bAll; render(); },
   brainSync() { brainSync(true); },
-  clearSearch() { S.ui.mSearch = ''; focusLater('mSearch'); render(); },
+  clearSearch() { S.ui.bSearch = ''; focusLater('bSearch'); render(); },
   async copyNote() {
     const n = (S.notes || []).find((x) => x.id === S.ui.noteId); if (!n) return;
     try { await navigator.clipboard.writeText(`${n.title}\n\n${n.body}`); toast('Nota copiata'); } catch { toast('Copia non riuscita'); }
@@ -1927,6 +2054,7 @@ const actions = {
       if (error) throw error;
       S.captures.unshift(data);
       toast('Spostata nella Mente');
+      thoughtSync();
       if (t.gcal_event_id && S.gcal.connected) {
         try { await sb.from('tasks').update({ due_time: null }).eq('id', id); await gcal('syncTask', { taskId: id }); } catch (err) { console.warn(err); }
       }
@@ -1942,7 +2070,7 @@ const actions = {
     c.status = 'inbox'; render();
     const { error } = await sb.from('captures').update({ status: 'inbox' }).eq('id', id);
     if (error) { c.status = 'archived'; render(); fail(error); }
-    else toast('Spostato in Da smistare', null, { label: 'Smista ora →', run: openInbox });
+    else { toast('Spostato in Da smistare', null, { label: 'Smista ora →', run: openInbox }); thoughtSync(); }
   },
   toastAct() {
     const a = toastAct; toastAct = null; toastUndo = null; S.ui.toast = ''; clearTimeout(toastTimer);
@@ -1962,7 +2090,7 @@ const actions = {
       };
     } else finish();
     const { error } = await sb.from('captures').update({ status: 'done' }).eq('id', id);
-    if (error) { S.captures.unshift(c); render(); fail(error); }
+    if (error) { S.captures.unshift(c); render(); fail(error); } else thoughtSync();
   },
   // Dalla Mente alle task di oggi con un tocco.
   async toTodo(id) {
@@ -1974,6 +2102,7 @@ const actions = {
       toast('Spostato nelle task di oggi');
       const { error } = await sb.from('captures').update({ status: 'planned', planned_task_id: t.id }).eq('id', id);
       if (error) throw error;
+      thoughtSync();
     } catch (err) { fail(err); }
   },
   // Smistata: la riga si accende, sale e sparisce (animazione diversa dalla spunta della Mente).
@@ -2001,7 +2130,7 @@ const actions = {
     delete c._out;
     c.status = 'archived'; render();
     const { error } = await sb.from('captures').update({ status: 'archived' }).eq('id', id);
-    if (error) { c.status = 'inbox'; render(); fail(error); } else toast('Spostato in Mente');
+    if (error) { c.status = 'inbox'; render(); fail(error); } else { toast('Spostato in Mente'); thoughtSync(); }
   },
   spMonth(id) { S.ui.spMonth = Math.min(0, S.ui.spMonth + Number(id)); render(); },
   addExpense() {
@@ -2125,7 +2254,7 @@ let swipe = null;
 const scrollsX = (el) => { for (let n = el; n && n !== app; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true; } return false; };
 document.addEventListener('touchstart', (e) => {
   swipe = null;
-  if (isWide() || !S.session || e.touches.length !== 1 || S.ui.editId || S.ui.evEdit || S.ui.capOpen || S.ui.noteId) return;
+  if (isWide() || !S.session || e.touches.length !== 1 || S.ui.editId || S.ui.evEdit || S.ui.capOpen || S.ui.noteId || S.ui.neId) return;
   const t = e.target;
   if (t.closest('.nav-bottom, .capture-wrap, input, textarea, select, .ev-sheet, [data-evkey], .fly, .lightbox') || scrollsX(t)) return;
   const p = e.touches[0];
@@ -2159,7 +2288,7 @@ app.addEventListener('input', (e) => {
   const key = el.dataset?.model; if (!key) return;
   S.ui[key] = el.value;
   if (key === 'draft' && !S.ui.capOpen && el.value) { S.ui.capOpen = true; render(); }
-  if (key === 'mSearch') render();
+  if (key === 'bSearch') render();
   if (key === 'schedDay' || key === 'schedTime') render();
 });
 
@@ -2187,11 +2316,22 @@ app.addEventListener('drop', (e) => {
 });
 
 app.addEventListener('focusout', (e) => {
+  if (rendering) return;
   const id = e.target.dataset?.edit;
   if (id && S.ui.editId === id) saveTaskEdit(id);
 });
 
 async function saveTaskEdit(id) {
+  const c = S.captures.find((x) => x.id === id);
+  if (c) {
+    const body = S.ui.editText.trim();
+    S.ui.editId = null;
+    if (!body || body === c.body) { render(); return; }
+    const old = c.body; c.body = body; render();
+    const { error } = await sb.from('captures').update({ body }).eq('id', id);
+    if (error) { c.body = old; render(); fail(error); } else thoughtSync();
+    return;
+  }
   const t = S.tasks.find((x) => x.id === id);
   const title = S.ui.editText.trim();
   S.ui.editId = null;
@@ -2255,6 +2395,7 @@ app.addEventListener('submit', async (e) => {
 // Cmd/Ctrl+K apre la cattura su computer.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && S.ui.viewImg) { S.ui.viewImg = null; render(); return; }
+  if (e.key === 'Escape' && S.ui.neId) { S.ui.neId = null; render(); return; }
   if (e.key === 'Escape' && S.ui.noteId) { S.ui.noteId = null; render(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); S.ui.capOpen = true; focusLater('cap'); render(); }
 });
@@ -2266,7 +2407,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key.length !== 1 || e.key === ' ') return;               // solo caratteri stampabili (niente frecce, Invio, spazio iniziale)
   const t = e.target;
   if (t && t.closest && t.closest('input, textarea, select, [contenteditable]')) return; // stai già scrivendo altrove
-  if (S.ui.editId || S.ui.evEdit || S.ui.viewImg || S.ui.noteId || !document.getElementById('cap')) return;
+  if (S.ui.editId || S.ui.evEdit || S.ui.viewImg || S.ui.noteId || S.ui.neId || !document.getElementById('cap')) return;
   e.preventDefault();
   S.ui.draft += e.key;
   S.ui.capOpen = true;

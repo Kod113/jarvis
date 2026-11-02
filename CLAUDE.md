@@ -47,8 +47,18 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   (verify_jwt false; JWT del proprietario o `x-ingest-token`) copia le pagine nella tabella `brain_notes` (RLS sola lettura del proprietario),
   in modo incrementale su `last_edited_time`, e toglie quelle cancellate. Serve che la pagina Second brain sia collegata all'integrazione
   Notion di Jarvis (••• → Connessioni). L'app sincronizza aprendo Mente (max ogni 10 min) e col pulsante ↻; anche il workflow notion.yml.
-  UI: barra di ricerca unica in Mente (note + pensieri, senza accenti, tutte le parole), chip per Area, lettore `noteReaderHtml`
-  (spunte, link, evidenziazione, "Copia testo", "Apri in Notion"). Migration in `supabase/migrations/20261102_brain_notes.sql`.
+  UI: barra di ricerca dentro la scheda Second brain (`S.ui.bSearch`, solo note, senza accenti, tutte le parole), chip per Area, lettore
+  `noteReaderHtml` (spunte, link, evidenziazione, "Copia testo", "Apri in Notion", matita = modifica). Migration `20261102_brain_notes.sql`.
+  **Due vie** (come le spese): matita nel lettore o "+" nella scheda → `noteEditorHtml` (titolo, area, testo) → `brain` azione `saveNote`,
+  che su Notion cambia solo le righe diverse (diff LCS in `patchBody`: righe uguali, immagini e formattazione restano; sottopagine,
+  tabelle ed elenchi annidati si modificano solo su Notion → errore leggibile). Note nuove: Fonte "Jarvis".
+- Pensieri (capture `archived` della Mente) ↔ database Notion inline **"Pensieri"** dentro la pagina Second brain (creato da `brain` se manca;
+  proprietà Pensiero/Data/Jarvis ID). `brain` azione `thoughts` (anche dentro `sync`): `captures.notion_page_id` + `notion_body` (testo
+  all'ultima sync: se cambia `body` ha modificato Jarvis, che vince; se cambia su Notion si importa). Righe nuove su Notion = pensieri nuovi;
+  righe cancellate su Notion = pensiero `done`; pensiero uscito dalla Mente in Jarvis = riga archiviata su Notion. L'app chiama
+  `thoughtSync()` dopo ogni modifica (raggruppata, una alla volta) e aprendo Mente. Pensieri modificabili toccando il testo (`editCap`, riusa
+  `editId`). Nuvola (`toBrain`): il pensiero diventa nota del database Note (foto caricate con la File Upload API), capture `status='brain'`,
+  `brain_note_id`. Migration `20261102_thoughts_notion.sql`.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.
@@ -112,4 +122,4 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - Google Calendar: eventi e turni nel calendario; "Metti in calendario" crea l'evento.
 - "Decide Jarvis": oggi smistamento a parole chiave (`classify()` in app.js; nel dubbio è una task); in futuro AI.
 - Settimana: al posto del contatore task fatte (tolto) un blocco utile da decidere: idee proposte turni della settimana, allenamenti, sonno medio.
-- Mente: Second brain fatto (nov 2026). Prossimi: libri sincronizzati con Notion, argomenti da studiare, nuove note dalla cattura verso Notion.
+- Mente: Second brain a due vie + Pensieri ↔ Notion fatti (nov 2026). Prossimi: libri sincronizzati con Notion, argomenti da studiare.

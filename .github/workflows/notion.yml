@@ -24,7 +24,7 @@ jobs:
             echo "$res" | python3 -c "import json,sys;r=json.load(sys.stdin);print({k:r.get(k) for k in ('status','current','pushed','imported','remaining','error')})"
             echo "$res" | python3 -c "import json,sys;r=json.load(sys.stdin);sys.exit(0 if (r.get('remaining') or 0)>0 else 1)" || break
           done
-      - name: Second brain (note Notion → Mente)
+      - name: Second brain (pensieri e note ↔ Notion)
         if: always()
         env:
           JARVIS_INGEST_TOKEN: ${{ secrets.JARVIS_INGEST_TOKEN }}
