@@ -12,13 +12,14 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Trigger `private.only_owner_signup` su `auth.users`: solo `davsorm@gmail.com` può registrarsi (e viene confermato subito).
 - Edge Functions (sorgenti in `supabase/functions/`, deploy con `deploy_edge_function` includendo `../_shared/google.ts`):
   - `google-oauth` (verify_jwt **false**): ritorno OAuth da Google, salva i token in `google_tokens` (solo service role).
-  - `gcal` (verify_jwt false, autenticazione interna con getUser): azioni `status`, `authUrl`, `events`, `syncTask`, `updateEvent`, `setCalendar`, `refreshCalendars`, `disconnect`.
+  - `gcal` (verify_jwt false, autenticazione interna con getUser): azioni `status`, `authUrl`, `events`, `syncTask`, `updateEvent`, `deleteEvent`, `setCalendar`, `refreshCalendars`, `disconnect`.
   - Segreti su Supabase: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (li inserisce David). Calendari mostrati: tabella `calendars` (Personale + Famiglia).
   - Le task con data+ora diventano eventi sul calendario principale (`tasks.gcal_event_id`, `extendedProperties.private.jarvisTaskId`).
   - Notion Calendar legge Google Calendar: nessuna integrazione separata.
 - Garmin: `.github/workflows/garmin.yml` (5 volte al giorno + manuale + push su `tools/garmin/**`, al push sincronizza 30 giorni) esegue
   `tools/garmin/sync.py` (libreria non ufficiale `garminconnect`), che invia a `garmin-ingest` (verify_jwt false, header `x-ingest-token` =
-  segreto `JARVIS_INGEST_TOKEN`). Tabelle `health_daily` (sonno, FC, HRV, Body Battery, prontezza, passi) e `activities`.
+  segreto `JARVIS_INGEST_TOKEN`). Tabelle `health_daily` (sonno, FC, HRV, Body Battery, prontezza, passi, `nap_minutes` + `naps` jsonb
+  [{start,end,min}] = sonno di giorno da `dailyNapDTOS`) e `activities`.
   Segreti GitHub: `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `JARVIS_INGEST_TOKEN`. Token Garmin in cache cifrati (repo pubblico: mai stampare dati).
   Per rilanciare la sync senza token gh: aggiorna `tools/garmin/LAST_TRIGGER` e fai push.
   Sync su richiesta: funzione `garmin-refresh` (verify_jwt false, solo il proprietario) avvia `workflow_dispatch` con il segreto Supabase
@@ -52,6 +53,12 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Eventi modificabili come su Google (due vie): trascina = sposta (15'), maniglia in basso = durata, tocco = foglio con titolo/giorno/orari
   (`evOpen`/`evSave` → `saveEvent` → gcal `updateEvent`, ottimistico con ripristino se Google rifiuta). Su telefono il trascinamento parte
   con pressione prolungata. Gli eventi si ricaricano ogni minuto e al ritorno nell'app (modifiche fatte su Google).
+  Nel foglio evento il cestino elimina l'evento anche da Google (`evDelete`, "Annulla" per 4,5 s, `evGone` lo nasconde nel frattempo).
+- Task trascinabili sul calendario (solo su schermo largo, ≥1000px): righe task e blocchi task con `data-dragtask`; rilascio su una cella
+  del mese = nuova data (orario invariato), sulla giornata a blocchi = data + orario a 15' (`dropTask` → `updateTask` + `syncTask`).
+  Col mouse parte muovendo, col dito con pressione prolungata; scorrimento automatico vicino ai bordi. Su computer il pannello del giorno
+  mostra sempre la griglia oraria; nel Calendario a tutto schermo c'è la scheda "Task di oggi" accanto.
+- Corpo: nel riquadro, sotto le fasi del sonno, riga "Di giorno" (riposini con orari) e "Totale" notte + giorno.
 - Layout Bento su telefono (barra in basso: Oggi · Settimana · Spese · Mente), su computer barra laterale + Calendario a pagina intera (≥1000px).
 - Icona: J corsiva bianca tagliata (stile "J1") su blu di giorno, su grafite di sera.
 - Corpo: scheda "Valutazioni" sotto i grafici (`insightsHtml`, tutto calcolato nel browser): Oggi (scostamenti dalla media 30 gg con cause probabili:

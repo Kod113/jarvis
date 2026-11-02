@@ -13,7 +13,7 @@ function safeEqual(a: string, b: string) {
 }
 
 const HEALTH_COLS = ['day', 'sleep_minutes', 'sleep_score', 'deep_min', 'light_min', 'rem_min', 'awake_min', 'resting_hr', 'hrv', 'hrv_status',
-  'body_battery_wake', 'body_battery_high', 'body_battery_low', 'stress_avg', 'steps', 'readiness', 'readiness_level'];
+  'body_battery_wake', 'body_battery_high', 'body_battery_low', 'stress_avg', 'steps', 'readiness', 'readiness_level', 'nap_minutes', 'naps'];
 const ACT_COLS = ['id', 'start_time', 'day', 'type', 'name', 'duration_s', 'distance_m', 'avg_hr', 'max_hr', 'calories', 'aerobic_te', 'training_load', 'zones_s'];
 const pick = (o: Record<string, unknown>, cols: string[]) => Object.fromEntries(cols.filter((c) => o[c] !== undefined).map((c) => [c, o[c]]));
 

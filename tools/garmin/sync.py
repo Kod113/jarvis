@@ -37,6 +37,17 @@ def mins(seconds):
     return round(seconds / 60) if isinstance(seconds, (int, float)) else None
 
 
+def iso_gmt(v):
+    """Orario GMT di Garmin (stringa o millisecondi) → ISO con Z, oppure None."""
+    if isinstance(v, (int, float)):
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(v / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(v, str) and v:
+        v = v.replace(" ", "T").split(".")[0]
+        return v if v.endswith("Z") else v + "Z"
+    return None
+
+
 def safe(fn, *args):
     try:
         return fn(*args)
@@ -72,6 +83,18 @@ def day_row(api, day):
         "readiness": ready.get("score"),
         "readiness_level": ready.get("level"),
     }
+    # Sonno durante il giorno (riposini): Garmin li dà a parte, in dailyNapDTOS (o come totale napTimeSeconds).
+    naps = []
+    for n in sleep.get("dailyNapDTOS") or s.get("dailyNapDTOS") or []:
+        secs = n.get("napTimeSec") or n.get("napTimeSeconds")
+        if not secs:
+            continue
+        st, en = n.get("napStartTimestampGMT"), n.get("napEndTimestampGMT")
+        naps.append({"start": iso_gmt(st), "end": iso_gmt(en), "min": mins(secs)})
+    nap_total = sum(n["min"] for n in naps) if naps else mins(s.get("napTimeSeconds"))
+    if s:  # con i dati del sonno presenti, 0 = nessun riposino (così un riposino cancellato su Garmin sparisce)
+        row["nap_minutes"] = nap_total or 0
+        row["naps"] = naps
     for k in ("resting_hr", "hrv", "body_battery_wake", "body_battery_high", "body_battery_low", "steps", "readiness", "sleep_score"):
         if isinstance(row[k], float):
             row[k] = round(row[k])

@@ -527,3 +527,30 @@ button.tb-chip { border: 0; color: var(--ink); font: inherit; font-size: 12px; c
 .wt-tabs { margin: 2px 0 4px; }
 .wt-day { margin: 10px 0 0; font-size: 12px; font-weight: 600; color: var(--muted); }
 .list:has(> [data-cap]) { overflow: hidden; }
+
+/* Sonno di giorno (riposini Garmin) nella scheda Corpo */
+.nap-row { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line-2); }
+.m-icon.nap { background: var(--str-soft); color: var(--str); }
+.nap-txt, .nap-tot { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.nap-txt { flex: 1; }
+.nap-tot { text-align: right; align-items: flex-end; }
+.nap-v { font-family: var(--mono); font-size: 15px; }
+.nap-v small { font-family: var(--sans); font-size: 12px; color: var(--muted); }
+
+/* Elimina evento */
+.btn.ev-del { width: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; color: #C4362B; }
+.btn.ev-del svg { width: 18px; height: 18px; }
+:root[data-theme="dark"] .btn.ev-del { color: #FF8A7A; }
+
+/* Task trascinabili sul calendario */
+.task.draggable .task-title { cursor: grab; }
+.task.drag-src { opacity: .45; }
+.tk-dragging, .tk-dragging * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
+.tk-ghost { position: fixed; left: 0; top: 0; z-index: 999; pointer-events: none; max-width: 240px; padding: 7px 12px; border-radius: 10px;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); box-shadow: var(--shadow); font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-ghost.on-target { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.cell.drop { border-color: var(--accent); background: var(--soft); }
+.tb-drop { position: absolute; left: 2px; right: 2px; z-index: 6; box-sizing: border-box; border-radius: 8px; padding: 0 8px; display: flex; align-items: center;
+  border: 1.5px dashed var(--accent); background: var(--soft-2); color: var(--soft-ink); font-size: 12px; font-family: var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }

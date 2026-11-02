@@ -1,5 +1,5 @@
 // API Google Calendar per l'app. Chiamata con supabase.functions.invoke('gcal', { body: { action, ... } }).
-// Azioni: status, authUrl, events, syncTask, updateEvent, setCalendar, refreshCalendars, disconnect.
+// Azioni: status, authUrl, events, syncTask, updateEvent, deleteEvent, setCalendar, refreshCalendars, disconnect.
 // verify_jwt = false: l'autenticazione la fa la funzione stessa (getUser con il JWT dell'utente).
 import { accessToken, admin, env, gfetch, makeState, REDIRECT_URI, refreshCalendars, SCOPES } from '../_shared/google.ts';
 
@@ -127,6 +127,17 @@ Deno.serve(async (req) => {
         const r = await gfetch(token, `/calendars/${encodeURIComponent(cal.calendar_id)}/events/${encodeURIComponent(body.eventId)}`, { method: 'PATCH', body: JSON.stringify(patch) });
         if (!r.ok) return json({ error: r.status === 403 ? 'Non hai i permessi per modificare questo calendario' : 'Google ha rifiutato la modifica' }, r.status === 403 ? 403 : 502);
         return json({ ok: true, start: r.json.start?.dateTime || r.json.start?.date, end: r.json.end?.dateTime || r.json.end?.date, title: r.json.summary });
+      }
+      case 'deleteEvent': {
+        // Elimina da Jarvis un evento di un calendario mostrato (solo calendari dell'utente in tabella calendars).
+        const { data: cal } = await db.from('calendars').select('calendar_id').eq('user_id', user.id).eq('calendar_id', body.calendarId).maybeSingle();
+        if (!cal || !body.eventId) return json({ error: 'Evento non trovato' }, 404);
+        const token = await accessToken(user.id);
+        const r = await gfetch(token, `/calendars/${encodeURIComponent(cal.calendar_id)}/events/${encodeURIComponent(body.eventId)}`, { method: 'DELETE' });
+        if (!r.ok && r.status !== 410 && r.status !== 404) return json({ error: r.status === 403 ? 'Non hai i permessi per eliminare da questo calendario' : 'Google ha rifiutato l\'eliminazione' }, r.status === 403 ? 403 : 502);
+        // Se era l'evento di una task, la task resta ma senza orario.
+        await db.from('tasks').update({ gcal_event_id: null, due_time: null }).eq('user_id', user.id).eq('gcal_event_id', body.eventId);
+        return json({ ok: true });
       }
       case 'setCalendar': {
         await db.from('calendars').update({ enabled: !!body.enabled }).eq('user_id', user.id).eq('calendar_id', body.calendarId);

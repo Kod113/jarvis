@@ -363,8 +363,9 @@ async function syncTask(id) {
   } catch (err) { toast('Calendario: ' + err.message); }
 }
 // Eventi Google di un giorno (esclusi quelli creati da Jarvis per una task, già mostrati come task).
+const evGone = new Set(); // eventi in eliminazione (chiave evKey)
 function eventsOn(day) {
-  return S.events.filter((e) => !e.taskId && (e.allDay ? e.start <= day && day < e.end : ymd(new Date(e.start)) === day))
+  return S.events.filter((e) => !e.taskId && !evGone.has(`${e.cal}|${e.id}`) && (e.allDay ? e.start <= day && day < e.end : ymd(new Date(e.start)) === day))
     .sort((a, b) => (a.allDay ? '0' : '1' + a.start).localeCompare(b.allDay ? '0' : '1' + b.start));
 }
 const evTime = (e) => (e.allDay ? 'giorno' : hhmm(new Date(e.start).toTimeString()));
@@ -674,7 +675,8 @@ function taskRowHtml(x, opts) {
   const open = S.ui.schedId === x.id;
   const clockCls = open ? 'open' : (x.due_time || moved ? 'set' : '');
   const editing = S.ui.editId === x.id;
-  return `<div class="task ${x.done ? 'done' : ''} ${moved ? 'moved' : ''} ${x.id === newTaskId ? 'is-new' : ''}">
+  const drag = isWide() && !editing ? ` data-dragtask="${x.id}"` : '';
+  return `<div class="task ${x.done ? 'done' : ''} ${moved ? 'moved' : ''} ${x.id === newTaskId ? 'is-new' : ''} ${drag ? 'draggable' : ''}"${drag}>
     <div class="task-line">
       <button class="check-btn" data-action="toggleTask" data-id="${x.id}" aria-pressed="${x.done}" aria-label="${x.done ? 'Segna da fare' : 'Segna fatta'}: ${esc(x.title)}"><span class="check">${x.done ? I.check : ''}</span></button>
       <span class="task-text">
@@ -835,6 +837,13 @@ function bodyCardHtml(cls = 'span2') {
   const st = [['deep', h.deep_min, 'Profondo'], ['light', h.light_min, 'Leggero'], ['rem', h.rem_min, 'REM'], ['awake', h.awake_min, 'Sveglio']].filter((x) => x[1]);
   const stages = st.length ? `<div class="stage-bar" aria-hidden="true">${st.map(([k, m]) => `<span class="st-${k}" style="flex:${m}"></span>`).join('')}</div>
     <div class="stage-legend">${st.filter(([k]) => k !== 'awake').map(([k, m, l]) => `<span><i class="st-${k}"></i>${l} ${sleepLabel(m)}</span>`).join('')}</div>` : '';
+  // Sonno di giorno (riposini da Garmin) + totale delle 24 ore.
+  const napMin = h.nap_minutes || 0;
+  const napTimes = (Array.isArray(h.naps) ? h.naps : []).filter((n) => n.start && n.end)
+    .map((n) => `${hhmm(new Date(n.start).toTimeString())}–${hhmm(new Date(n.end).toTimeString())}`).join(', ');
+  const napRow = napMin ? `<span class="nap-row"><span class="m-icon nap" aria-hidden="true">${I.sun}</span>
+    <span class="nap-txt"><span class="stat-l">Di giorno</span><span class="nap-v">${napMin >= 60 ? sleepLabel(napMin) : napMin + ' min'}${napTimes ? ` <small>· ${esc(napTimes)}</small>` : ''}</span></span>
+    ${hasSleep ? `<span class="nap-tot"><span class="stat-l">Totale</span><span class="nap-v">${sleepLabel(h.sleep_minutes + napMin)}</span></span>` : ''}</span>` : '';
   const rl = h.readiness_level;
   const readyTrend = rl ? `<span class="trend ${['PRIME', 'HIGH'].includes(rl) ? 'good' : ['LOW', 'POOR'].includes(rl) ? 'bad' : ''}">${READY_IT[rl] || ''}</span>` : '';
   return `<div class="card body-card ${cls}">
@@ -846,8 +855,8 @@ function bodyCardHtml(cls = 'span2') {
     </div>
     <button class="tile-btn plain sleep-hero" data-action="go" data-id="corpo" aria-label="Apri la sezione Corpo">
       ${hasSleep ? `<span class="sleep-top"><span><span class="stat-l">Stanotte hai dormito</span><span class="sleep-big">${sleepLabel(h.sleep_minutes)}</span></span>
-        ${h.sleep_score ? `<span class="pill-badge">Punteggio ${h.sleep_score} · ${SLEEP_Q(h.sleep_score)}</span>` : ''}</span>${stages}`
-      : `<span class="stat-l">Stanotte</span><span class="card-strong">${linked ? 'Il sonno non è ancora arrivato' : 'Collega Garmin per vedere il sonno'}</span>`}
+        ${h.sleep_score ? `<span class="pill-badge">Punteggio ${h.sleep_score} · ${SLEEP_Q(h.sleep_score)}</span>` : ''}</span>${stages}${napRow}`
+      : `<span class="stat-l">Stanotte</span><span class="card-strong">${linked ? 'Il sonno non è ancora arrivato' : 'Collega Garmin per vedere il sonno'}</span>${napRow}`}
     </button>
     <div class="m-list">
       ${metricRow('heart', I.heartFill, 'FC a riposo', h.resting_hr, ' bpm', vsAvg('resting_hr', h.resting_hr, false))}
@@ -1140,9 +1149,9 @@ function dayPanelHtml(day) {
   return `<div class="card">
     <p class="card-label"><span>${sub}</span></p>
     <h2 style="margin:0;font-size:18px;font-weight:600">${longDate(d)}</h2>
-    ${evs.length || list.some((x) => x.due_time) ? dayBlocksHtml(day, evs, list) : ''}
+    ${!list.length && !evs.length ? `<p class="empty">Giornata libera.${isWide() ? ' Trascina qui una task per darle un orario.' : ''}</p>` : ''}
+    ${evs.length || list.some((x) => x.due_time) || isWide() ? dayBlocksHtml(day, evs, list, isWide()) : ''}
     ${list.length ? `<div>${list.map(taskRowHtml).join('')}</div>` : ''}
-    ${!list.length && !evs.length ? '<p class="empty">Giornata libera.</p>' : ''}
   </div>`;
 }
 
@@ -1150,7 +1159,7 @@ function dayPanelHtml(day) {
 const PPH = 46; // pixel per ora
 const toMin = (d) => d.getHours() * 60 + d.getMinutes();
 const durText = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? pad(m % 60) : ''}` : `${m}'`);
-function dayBlocksHtml(day, evs, tasks = []) {
+function dayBlocksHtml(day, evs, tasks = [], grid = false) {
   const allDay = evs.filter((e) => e.allDay);
   const items = evs.filter((e) => !e.allDay).map((e) => {
     const st = new Date(e.start), en = new Date(e.end);
@@ -1160,10 +1169,10 @@ function dayBlocksHtml(day, evs, tasks = []) {
   });
   tasks.filter((x) => x.due_time).forEach((x) => {
     const [h, m] = hhmm(x.due_time).split(':').map(Number); const a = h * 60 + m;
-    items.push({ a, b: Math.min(a + 30, 24 * 60), title: x.title, tone: 'c-task' + (x.done ? ' done' : ''), meta: `${hhmm(x.due_time)} · task`, sub: '' });
+    items.push({ a, b: Math.min(a + 30, 24 * 60), title: x.title, tone: 'c-task' + (x.done ? ' done' : ''), meta: `${hhmm(x.due_time)} · task`, sub: '', task: x });
   });
   const chips = allDay.length ? `<div class="tb-allday">${allDay.map((e) => `<button class="tb-chip ${evTone(e)}" data-action="evOpen" data-id="${esc(evKey(e))}">${esc(e.title)}</button>`).join('')}</div>` : '';
-  if (!items.length) return chips;
+  if (!items.length && !grid) return chips;
   items.sort((x, y) => x.a - y.a || y.b - x.b);
   // Colonne per gli eventi sovrapposti (per gruppi che si toccano).
   let group = [], groupEnd = -1;
@@ -1175,23 +1184,23 @@ function dayBlocksHtml(day, evs, tasks = []) {
     it.col = c; group.push(it); groupEnd = Math.max(groupEnd, it.b);
   });
   if (group.length) flush();
-  const h0 = Math.min(8, Math.floor(items[0].a / 60));
-  const h1 = Math.max(22, Math.ceil(Math.max(...items.map((i) => i.b)) / 60));
+  const h0 = items.length ? Math.min(8, Math.floor(items[0].a / 60)) : 8;
+  const h1 = items.length ? Math.max(22, Math.ceil(Math.max(...items.map((i) => i.b)) / 60)) : 22;
   const y = (m) => ((m - h0 * 60) / 60) * PPH;
   // Spazi liberi tra un impegno e l'altro (da 30 minuti in su).
-  const gaps = []; let end = items[0].b;
+  const gaps = []; let end = items.length ? items[0].b : 0;
   items.forEach((it) => { if (it.a - end >= 30) gaps.push([end, it.a]); end = Math.max(end, it.b); });
   const hours = []; for (let h = h0; h <= h1; h++) hours.push(`<div class="tb-hour" style="top:${y(h * 60)}px"><span>${pad(h % 24)}</span></div>`);
   const now = new Date(); const nm = toMin(now);
   const nowLine = day === todayYmd() && nm >= h0 * 60 && nm <= h1 * 60 ? `<div class="tb-now" style="top:${y(nm)}px"></div>` : '';
-  return `${chips}<div class="tb" style="height:${(h1 - h0) * PPH}px">
+  return `${chips}<div class="tb" data-day="${day}" data-h0="${h0}" data-h1="${h1}" style="height:${(h1 - h0) * PPH}px">
     ${hours.join('')}
     <div class="tb-lane">
       ${gaps.map(([a, b]) => `<div class="tb-gap" style="top:${y(a)}px;height:${y(b) - y(a)}px"><span>Libero · ${durText(b - a)}</span></div>`).join('')}
       ${items.map((it) => {
         const h = Math.max(20, y(it.b) - y(it.a) - 2);
-        const edit = it.ev ? ` data-evkey="${esc(evKey(it.ev))}"` : '';
-        return `<div class="tb-ev ${it.tone} ${h < 34 ? 'short' : ''} ${it.ev ? 'editable' : ''}"${edit} style="top:${y(it.a) + 1}px;height:${h}px;left:calc(${(it.col / it.n) * 100}% + 2px);width:calc(${100 / it.n}% - 4px)" title="${esc(it.title)} · ${esc(it.meta)}">
+        const edit = it.ev ? ` data-evkey="${esc(evKey(it.ev))}"` : it.task && isWide() ? ` data-dragtask="${it.task.id}"` : '';
+        return `<div class="tb-ev ${it.tone} ${h < 34 ? 'short' : ''} ${it.ev || (it.task && isWide()) ? 'editable' : ''}"${edit} style="top:${y(it.a) + 1}px;height:${h}px;left:calc(${(it.col / it.n) * 100}% + 2px);width:calc(${100 / it.n}% - 4px)" title="${esc(it.title)} · ${esc(it.meta)}">
           <span class="tb-t">${esc(it.title)}</span><span class="tb-m">${esc(it.meta)}${it.sub ? ' · ' + esc(it.sub) : ''}</span>${it.ev ? '<span class="tb-rs" aria-hidden="true"></span>' : ''}</div>`;
       }).join('')}
       ${nowLine}
@@ -1237,7 +1246,7 @@ function evEditorHtml() {
       ${e.allDay ? '' : `<label class="ev-f"><span>Inizio</span><input type="time" class="field" data-model="evStart" value="${esc(u.evStart)}" step="300"></label>
       <label class="ev-f"><span>Fine</span><input type="time" class="field" data-model="evEnd" value="${esc(u.evEnd)}" step="300"></label>`}
     </div>
-    <div class="row-btns"><button class="btn grow" data-action="evCancel">Annulla</button><button class="btn primary grow2" data-action="evSave">Salva</button></div>
+    <div class="row-btns"><button class="btn ev-del" data-action="evDelete" aria-label="Elimina evento" title="Elimina evento">${I.trash}</button><button class="btn grow" data-action="evCancel">Annulla</button><button class="btn primary grow2" data-action="evSave">Salva</button></div>
   </div>`;
 }
 
@@ -1318,6 +1327,7 @@ function viewCalendario() {
   <div class="cal-wrap">
     <div class="cal">${monthGridHtml(S.ui.monthOffset, S.ui.calSel)}</div>
     <div class="cal-side">
+      ${isWide() ? tasksCardHtml() : ''}
       ${dayPanelHtml(S.ui.calSel)}
       ${calendarsCardHtml()}
       <div class="card"><p class="card-label"><span>Da smistare · metti nel giorno scelto</span><span class="mono">${inbox().length}</span></p>${inboxListHtml(8, true, S.ui.calSel)}</div>
@@ -1700,6 +1710,22 @@ const actions = {
     render();
   },
   evCancel() { S.ui.evEdit = null; render(); },
+  // Elimina l'evento anche da Google Calendar, con qualche secondo per annullare.
+  evDelete() {
+    const k = S.ui.evEdit; const e = findEv(k); if (!e) return;
+    S.ui.evEdit = null; evGone.add(k);
+    let undone = false;
+    toast('Evento eliminato', () => { undone = true; evGone.delete(k); render(); });
+    render();
+    setTimeout(async () => {
+      if (undone) return;
+      try {
+        await gcal('deleteEvent', { calendarId: e.cal, eventId: e.id });
+        S.events = S.events.filter((x) => evKey(x) !== k);
+      } catch (err) { toast('Calendario: ' + err.message); }
+      evGone.delete(k); render();
+    }, 4600);
+  },
   evSave() {
     const u = S.ui; const e = findEv(u.evEdit); if (!e) return;
     const title = u.evTitle.trim() || e.title;
@@ -2180,12 +2206,120 @@ app.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.id === 'evTitle') { e.preventDefault(); actions.evSave(); }
 });
 
+// ---- Task trascinabili sul calendario: sul giorno del mese = cambia data, sulla giornata a blocchi = data + orario (a 15').
+// Col mouse parte muovendo, col dito con pressione prolungata. Una task con orario finisce anche su Google Calendar.
+let tkDrag = null, tkSuppressClick = false;
+app.addEventListener('pointerdown', (e) => {
+  if (e.button > 0 || tbDrag || S.ui.editId) return;
+  const src = e.target.closest('[data-dragtask]'); if (!src) return;
+  if (e.target.closest('input, .icon-btn, .check-btn, .sched, .thumbs, .thumb')) return;
+  const t = S.tasks.find((x) => x.id === src.dataset.dragtask); if (!t) return;
+  tkDrag = { t, src, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, pid: e.pointerId, touch: e.pointerType !== 'mouse', active: false, moved: false, timer: null, ghost: null, drop: null };
+  if (tkDrag.touch) tkDrag.timer = setTimeout(() => { if (tkDrag && !tkDrag.moved) startTkDrag(); }, 350);
+});
+// Vicino al bordo alto/basso la pagina (o il riquadro che scorre) scorre da sola, per arrivare alle ore più avanti.
+function scrollerAt(x, y) {
+  let el = document.elementFromPoint(x, y);
+  while (el && el !== document.body) {
+    const cs = getComputedStyle(el);
+    if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 2) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement;
+}
+function tkAutoScroll() {
+  const d = tkDrag; if (!d || !d.active) return;
+  const edge = 70, h = window.innerHeight;
+  const v = d.y < edge ? -Math.ceil((edge - d.y) / 5) : d.y > h - edge ? Math.ceil((d.y - (h - edge)) / 5) : 0;
+  if (v) { d.ghost.style.visibility = 'hidden'; const sc = scrollerAt(d.x, d.y); d.ghost.style.visibility = ''; sc.scrollTop += v; moveTkDrag(d.x, d.y); }
+  d.raf = requestAnimationFrame(tkAutoScroll);
+}
+function startTkDrag() {
+  const d = tkDrag; d.active = true;
+  d.ghost = document.createElement('div');
+  d.ghost.className = 'tk-ghost';
+  d.ghost.textContent = d.t.title;
+  document.body.appendChild(d.ghost);
+  d.src.classList.add('drag-src');
+  document.documentElement.classList.add('tk-dragging');
+  if (navigator.vibrate) navigator.vibrate(8);
+  moveTkDrag(d.x, d.y);
+  d.raf = requestAnimationFrame(tkAutoScroll);
+}
+function clearTkTarget() {
+  document.querySelectorAll('.cell.drop').forEach((c) => c.classList.remove('drop'));
+  document.querySelectorAll('.tb-drop').forEach((c) => c.remove());
+}
+function moveTkDrag(x, y) {
+  const d = tkDrag;
+  d.ghost.style.transform = `translate(${x + 12}px, ${y + 12}px)`;
+  const el = document.elementFromPoint(x, y);
+  clearTkTarget(); d.drop = null;
+  const cell = el && el.closest('.cell[data-id]');
+  const tb = el && el.closest('.tb[data-day]');
+  if (cell) {
+    cell.classList.add('drop');
+    d.drop = { day: cell.dataset.id };
+  } else if (tb) {
+    const lane = tb.querySelector('.tb-lane'); const r = lane.getBoundingClientRect();
+    const h0 = Number(tb.dataset.h0), h1 = Number(tb.dataset.h1);
+    let m = h0 * 60 + Math.round(((y - r.top) / PPH) * 60 / 15) * 15;
+    m = Math.max(h0 * 60, Math.min(h1 * 60 - 30, m, 23 * 60 + 30));
+    const time = `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+    const p = document.createElement('div');
+    p.className = 'tb-drop';
+    p.style.top = `${((m - h0 * 60) / 60) * PPH + 1}px`; p.style.height = `${PPH / 2 - 2}px`;
+    p.textContent = `${time} · ${d.t.title}`;
+    lane.appendChild(p);
+    d.drop = { day: tb.dataset.day, time };
+  }
+  d.ghost.classList.toggle('on-target', !!d.drop);
+}
+window.addEventListener('pointermove', (e) => {
+  const d = tkDrag; if (!d || e.pointerId !== d.pid) return;
+  d.x = e.clientX; d.y = e.clientY;
+  if (!d.active) {
+    if (Math.abs(e.clientX - d.x0) > 6 || Math.abs(e.clientY - d.y0) > 6) {
+      d.moved = true;
+      if (d.touch) { clearTimeout(d.timer); tkDrag = null; return; } // era uno scorrimento
+      startTkDrag();
+    } else return;
+  }
+  e.preventDefault();
+  moveTkDrag(e.clientX, e.clientY);
+});
+function endTkDrag(e, cancelled) {
+  const d = tkDrag; if (!d || (e && e.pointerId !== d.pid)) return;
+  clearTimeout(d.timer); cancelAnimationFrame(d.raf); tkDrag = null;
+  if (!d.active) return;
+  clearTkTarget(); d.ghost.remove(); d.src.classList.remove('drag-src');
+  document.documentElement.classList.remove('tk-dragging');
+  tkSuppressClick = true; setTimeout(() => { tkSuppressClick = false; }, 60);
+  if (!cancelled && d.drop) dropTask(d.t, d.drop.day, d.drop.time);
+}
+window.addEventListener('pointerup', (e) => endTkDrag(e, false));
+window.addEventListener('pointercancel', (e) => endTkDrag(e, true));
+document.addEventListener('touchmove', (e) => { if (tkDrag && tkDrag.active) e.preventDefault(); }, { passive: false });
+// Dopo un trascinamento il "clic" finale non deve aprire la modifica della task o selezionare il giorno.
+app.addEventListener('click', (e) => { if (tkSuppressClick) { e.stopPropagation(); e.preventDefault(); tkSuppressClick = false; } }, true);
+app.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-dragtask]') && isWide()) e.preventDefault(); });
+async function dropTask(t, day, time) {
+  const due_time = time !== undefined ? time : (t.due_time ? hhmm(t.due_time) : null);
+  if (t.due_date === day && (t.due_time ? hhmm(t.due_time) : null) === due_time) return;
+  const isToday = day === todayYmd();
+  S.ui.calSel = day;
+  const g = S.gcal.connected && due_time ? ' · anche su Google' : '';
+  toast(isToday ? (due_time ? `In calendario oggi alle ${due_time}${g}` : 'Messa per oggi') : `Spostata a ${dayLabel(day)}${due_time ? ' alle ' + due_time : ''}${g}`);
+  await updateTask(t.id, { due_date: day, due_time, rescheduled_at: isToday ? null : new Date().toISOString() });
+  await syncTask(t.id);
+}
+
 // Le modifiche fatte su Google (o da altri dispositivi) arrivano da sole: ricarico gli eventi ogni minuto.
 setInterval(async () => {
-  if (document.visibilityState !== 'visible' || !S.session || !S.gcal.connected || tbDrag || S.ui.evEdit) return;
+  if (document.visibilityState !== 'visible' || !S.session || !S.gcal.connected || tbDrag || tkDrag || S.ui.evEdit) return;
   const before = JSON.stringify(S.events);
   await loadEvents(true);
-  if (!tbDrag && !S.ui.evEdit && JSON.stringify(S.events) !== before) render();
+  if (!tbDrag && !tkDrag && !S.ui.evEdit && JSON.stringify(S.events) !== before) render();
 }, 60 * 1000);
 
 document.addEventListener('visibilitychange', async () => {
