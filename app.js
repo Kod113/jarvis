@@ -50,6 +50,7 @@ const I = {
   left: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
   right: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>',
   search: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>',
   nfc: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 7a7 7 0 0 1 0 10M12 4a11 11 0 0 1 0 16M4 10a3 3 0 0 1 0 4"/></svg>',
   pen: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
@@ -162,6 +163,8 @@ const S = {
   expenses: [],
   health: null,
   notion: { state: 'idle', lastSync: 0, msg: '' },
+  notes: [],                                         // Second brain (tabella brain_notes, copia del database Notion)
+  brain: { state: 'idle', lastSync: 0, msg: '' },
   loadedMonths: new Set(),
   healthDays: [],
   garminSync: 'idle',
@@ -179,7 +182,7 @@ const S = {
     weekOffset: 0, weekSel: todayYmd(),
     monthOffset: 0, calSel: todayYmd(),
     spMonth: 0, adding: false, exAmount: '', exDesc: '', exCat: 'Cibo', exMethod: 'manual',
-    mFilter: 'tutto', mSearch: '',
+    mFilter: 'tutto', mSearch: '', noteId: null, bArea: '', bAll: false,
     editId: null, editText: '',
     loginErr: '', loginBusy: false
   }
@@ -252,6 +255,38 @@ async function loadAll() {
   S.healthDays = h.data || [];
   S.activities = a.data || [];
   S.health = S.healthDays.find((x) => x.day === todayYmd()) || null;
+  await loadNotes();
+}
+
+// Second brain: tutte le note (sono poche centinaia, la ricerca avviene nel browser ed è istantanea).
+async function loadNotes() {
+  const { data, error } = await sb.from('brain_notes').select('id, title, body, area, has_images, archived, edited_at, notion_url')
+    .order('edited_at', { ascending: false }).limit(5000);
+  if (error) { console.warn('brain_notes', error.message); return; }
+  S.notes = data || [];
+}
+// Aggiorna la copia delle note da Notion (funzione "brain"); in automatico al massimo ogni 10 minuti aprendo la Mente.
+async function brainSync(manual = false) {
+  if (S.brain.state === 'running') return;
+  S.brain.state = 'running'; render();
+  try {
+    let r;
+    for (let i = 0; i < 5; i++) {
+      const { data, error } = await sb.functions.invoke('brain', { body: { action: 'sync' } });
+      if (error) { let m = error.message; try { const b = await error.context.json(); m = b.hint || b.error || m; } catch { /* */ } throw new Error(m); }
+      r = data;
+      if (r.status === 'not_configured' || !r.remaining) break;
+    }
+    S.brain = { state: r.status === 'not_configured' ? 'off' : 'ok', lastSync: Date.now(), msg: '' };
+    await loadNotes();
+    render();
+    if (manual) toast(r.updated ? `Note aggiornate da Notion: ${r.updated}` : 'Le note sono già aggiornate');
+  } catch (err) {
+    console.warn(err);
+    S.brain = { state: 'error', lastSync: Date.now(), msg: err.message };
+    render();
+    if (manual) toast('Notion: ' + err.message);
+  }
 }
 
 // ---------------------------------------------------------------- Garmin
@@ -1545,15 +1580,134 @@ function viewSpese() {
     <button class="btn" data-action="notionSync" ${ns.state === 'running' ? 'disabled' : ''}>${ns.state === 'off' ? 'Riprova' : 'Sincronizza con Notion'}</button></div>`;
 }
 
+// ---------------------------------------------------------------- Second brain (note da Notion)
+const SECOND_BRAIN_URL = 'https://www.notion.so/40c9756b457b81c0a091f88739fbafa1';
+// Ricerca senza accenti e maiuscole: "citta" trova "città".
+const fold = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const qWords = (q) => fold(q).split(/\s+/).filter((w) => w.length > 0);
+// Una nota corrisponde se contiene tutte le parole cercate (titolo, testo o area). Il titolo pesa di più.
+function noteScore(n, words) {
+  const t = fold(n.title), b = fold(n.body), a = fold(n.area);
+  let score = 0;
+  for (const w of words) {
+    const inT = t.includes(w), inB = b.includes(w), inA = a.includes(w);
+    if (!inT && !inB && !inA) return 0;
+    score += (inT ? 10 : 0) + (inA ? 3 : 0) + (inB ? 1 + Math.min(4, b.split(w).length - 1) : 0);
+  }
+  return score;
+}
+// Evidenzia le parole cercate in un testo già da mostrare (escape incluso), confrontando senza accenti.
+function markHtml(text, words) {
+  if (!words.length) return esc(text);
+  const f = fold(text);
+  const hits = [];
+  for (const w of words) { let i = f.indexOf(w); while (i >= 0) { hits.push([i, i + w.length]); i = f.indexOf(w, i + w.length); } }
+  if (!hits.length) return esc(text);
+  hits.sort((x, y) => x[0] - y[0]);
+  let out = '', pos = 0;
+  for (const [s, e] of hits) { if (s < pos) continue; out += esc(text.slice(pos, s)) + `<mark>${esc(text.slice(s, e))}</mark>`; pos = e; }
+  return out + esc(text.slice(pos));
+}
+// Riga di anteprima: attorno alla prima parola trovata nel testo, altrimenti l'inizio della nota.
+function noteSnippet(n, words) {
+  const body = (n.body || '').replace(/^\s*\[( |x)\]\s?/gim, '').replace(/^-{3,}$/gm, '·').replace(/\s+/g, ' ').trim();
+  if (!body) return n.has_images ? 'Solo immagini' : '';
+  const f = fold(body);
+  let at = -1;
+  for (const w of words) { const i = f.indexOf(w); if (i >= 0 && (at < 0 || i < at)) at = i; }
+  if (at < 0) return esc(body.slice(0, 110)) + (body.length > 110 ? '…' : '');
+  const s = Math.max(0, at - 40), e = Math.min(body.length, at + 90);
+  return (s > 0 ? '…' : '') + markHtml(body.slice(s, e), words) + (e < body.length ? '…' : '');
+}
+// Testo della nota con link cliccabili, liste a spunta e parole cercate evidenziate.
+function noteBodyHtml(body, words) {
+  const URL_RE = /(https?:\/\/[^\s<>"')\]]+)/g;
+  const inline = (line) => line.split(URL_RE).map((part, i) => i % 2
+    ? `<a href="${esc(part)}" target="_blank" rel="noopener">${esc(part.replace(/^https?:\/\/(www\.)?/, '').slice(0, 48))}${part.length > 56 ? '…' : ''}</a>`
+    : markHtml(part, words)).join('');
+  return (body || '').split('\n').map((raw) => {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) return '<div class="nb-gap"></div>';
+    const todo = line.match(/^\s*\[( |x)\]\s?(.*)$/i);
+    if (todo) return `<div class="nb-todo ${todo[1].toLowerCase() === 'x' ? 'done' : ''}"><span class="nb-box">${todo[1].toLowerCase() === 'x' ? I.check : ''}</span><span>${inline(todo[2])}</span></div>`;
+    if (/^-{3,}$/.test(line.trim())) return '<hr class="nb-hr">';
+    return `<p class="nb-line">${inline(line)}</p>`;
+  }).join('');
+}
+const noteDate = (d) => { if (!d) return ''; const [y, m, g] = d.split('-').map(Number); return `${g} ${MONTHS[m - 1]} ${y}`; };
+function noteRowHtml(n, words) {
+  return `<button class="li note-row" data-action="openNote" data-id="${n.id}">
+    <div class="li-main"><span class="li-title">${markHtml(n.title, words)}</span>
+    <span class="note-snip">${noteSnippet(n, words)}</span>
+    <span class="li-meta">${esc(n.area || 'Senza area')} · ${noteDate(n.edited_at)}${n.has_images ? ' · con immagini' : ''}</span></div>
+  </button>`;
+}
+function brainCardHtml(words) {
+  const u = S.ui;
+  const notes = S.notes || [];
+  const areas = [...new Set(notes.map((n) => n.area).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  const pool = notes.filter((n) => !u.bArea || n.area === u.bArea);
+  let list, label;
+  if (words.length) {
+    list = pool.map((n) => [n, noteScore(n, words)]).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    label = `${list.length} ${list.length === 1 ? 'nota trovata' : 'note trovate'}`;
+  } else {
+    list = pool; label = `${pool.length} note${u.bArea ? ' · ' + esc(u.bArea) : ''}`;
+  }
+  const LIMIT = 8;
+  const shown = words.length || u.bAll ? list.slice(0, 200) : list.slice(0, LIMIT);
+  const syncLine = S.brain.state === 'running' ? 'Aggiorno da Notion…'
+    : S.brain.state === 'error' ? esc(S.brain.msg || 'Notion non raggiungibile')
+    : S.brain.lastSync ? 'Aggiornato da Notion' : '';
+  return `<div class="card brain">
+    <div class="brain-head">
+      <div><p class="card-label">Second brain</p><p class="brain-count">${label}</p></div>
+      <div class="brain-acts">
+        <button class="mini-btn ${S.brain.state === 'running' ? 'spin' : ''}" data-action="brainSync" aria-label="Aggiorna da Notion" title="Aggiorna da Notion">${I.refresh}</button>
+        <a class="btn notion-link" href="${SECOND_BRAIN_URL}" target="_blank" rel="noopener">Apri in Notion ${I.ext}</a>
+      </div>
+    </div>
+    ${areas.length ? `<div class="chips area-chips">${areas.map((a) => `<button class="chip ${u.bArea === a ? 'on' : ''}" data-action="bArea" data-id="${esc(a)}">${esc(a)}</button>`).join('')}</div>` : ''}
+    <div class="list">${shown.map((n) => noteRowHtml(n, words)).join('') || `<p class="empty">${notes.length ? 'Nessuna nota corrisponde.' : 'Le note di Notion compariranno qui dopo il primo aggiornamento.'}</p>`}</div>
+    ${!words.length && list.length > LIMIT ? `<button class="btn ghost more" data-action="bAll">${u.bAll ? 'Mostra meno' : `Mostra tutte (${list.length})`}</button>` : ''}
+    ${syncLine ? `<p class="sync-note">${syncLine}</p>` : ''}
+  </div>`;
+}
+// Lettore della nota: foglio a tutto schermo su telefono, finestra centrale su computer.
+function noteReaderHtml() {
+  const n = S.ui.noteId && (S.notes || []).find((x) => x.id === S.ui.noteId);
+  if (!n) return '';
+  const words = qWords(S.ui.mSearch);
+  return `<div class="ev-sheet-bg" data-action="closeNote"></div>
+  <article class="note-sheet card" role="dialog" aria-modal="true" aria-label="${esc(n.title)}">
+    <header class="note-top">
+      <div class="note-meta"><span class="note-area">${esc(n.area || 'Nota')}</span><span>${noteDate(n.edited_at)}</span></div>
+      <button class="icon-btn" data-action="closeNote" aria-label="Chiudi">${I.x}</button>
+    </header>
+    <h2 class="note-title">${markHtml(n.title, words)}</h2>
+    <div class="note-body">${noteBodyHtml(n.body, words) || '<p class="empty">Nota senza testo.</p>'}
+      ${n.has_images ? '<p class="note-img-hint">Questa nota ha immagini: le trovi su Notion.</p>' : ''}</div>
+    <footer class="note-foot">
+      <button class="btn grow" data-action="copyNote">Copia testo</button>
+      ${n.notion_url ? `<a class="btn primary grow2" href="${esc(n.notion_url)}" target="_blank" rel="noopener">Apri in Notion ${I.ext}</a>` : ''}
+    </footer>
+  </article>`;
+}
+
 function viewMente() {
   const u = S.ui;
-  const q = u.mSearch.trim().toLowerCase();
+  const q = u.mSearch.trim();
+  const words = qWords(q);
   // Frasi e idee trattate allo stesso modo: sono pensieri, da tenere qui o spostare nei To-do.
-  const all = S.captures.filter((c) => c.kind !== 'task' && c.status === 'archived' && (!q || c.body.toLowerCase().includes(q)));
+  const all = S.captures.filter((c) => c.kind !== 'task' && c.status === 'archived' && (!words.length || words.every((w) => fold(c.body).includes(w))));
+  const thoughts = `<div class="card">
+    <p class="card-label">Pensieri</p>
+    <div class="list">${all.map((c) => `<div class="li" data-cap="${c.id}"><div class="li-main"><span class="li-title">${markHtml(c.body, words)}</span>${thumbsHtml(c.images)}<span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}</span></div><button class="icon-btn m-btn" data-action="toInbox" data-id="${c.id}" aria-label="Metti da smistare: ${esc(c.body)}" title="Metti da smistare">${I.pencil}</button><button class="icon-btn m-btn" data-action="capDone" data-id="${c.id}" aria-label="Togli: ${esc(c.body)}" title="Non serve più">${I.checkBig}</button></div>`).join('') || `<p class="empty">${words.length ? 'Nessun pensiero corrisponde.' : 'Niente qui, per ora. Cattura un pensiero dalla barra.'}</p>`}</div>
+  </div>`;
   return `${headHtml('', 'Mente')}
-  <div class="search">${I.search}<label for="mSearch" class="sr-only">Cerca</label><input id="mSearch" data-model="mSearch" value="${esc(u.mSearch)}" placeholder="Cerca nei tuoi pensieri…"></div>
-  <div class="card">
-    <div class="list">${all.map((c) => `<div class="li" data-cap="${c.id}"><div class="li-main"><span class="li-title">${esc(c.body)}</span>${thumbsHtml(c.images)}<span class="li-meta">${dayLabel(ymd(new Date(c.created_at)))}</span></div><button class="icon-btn m-btn" data-action="toInbox" data-id="${c.id}" aria-label="Metti da smistare: ${esc(c.body)}" title="Metti da smistare">${I.pencil}</button><button class="icon-btn m-btn" data-action="capDone" data-id="${c.id}" aria-label="Togli: ${esc(c.body)}" title="Non serve più">${I.checkBig}</button></div>`).join('') || '<p class="empty">Niente qui, per ora. Cattura un pensiero dalla barra.</p>'}</div>
+  <div class="search">${I.search}<label for="mSearch" class="sr-only">Cerca</label><input id="mSearch" type="search" data-model="mSearch" value="${esc(u.mSearch)}" placeholder="Cerca nelle note e nei pensieri…" autocomplete="off" enterkeyhint="search">${q ? `<button class="mini-btn clear-q" data-action="clearSearch" aria-label="Cancella ricerca">${I.x}</button>` : ''}</div>
+  <div class="mente-grid">
+    ${words.length ? brainCardHtml(words) + thoughts : thoughts + brainCardHtml(words)}
   </div>`;
 }
 
@@ -1596,7 +1750,7 @@ function render() {
   const views = { oggi: viewOggi, calendario: viewCalendario, settimana: viewSettimana, spese: viewSpese, mente: viewMente, corpo: viewCorpo };
   const body = (views[S.view] || viewOggi)();
   const floatToast = S.ui.toast && isWide() ? toastHtml('float') : '';
-  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() || S.ui.editId ? '' : captureHtml()}${floatToast}${evEditorHtml()}${lightboxHtml()}</div>`;
+  app.innerHTML = `<div class="shell">${navHtml()}<main class="main">${body}</main>${isWide() || S.ui.editId ? '' : captureHtml()}${floatToast}${evEditorHtml()}${noteReaderHtml()}${lightboxHtml()}</div>`;
   afterRenderNav();
   hydrateImages();
   if (keepId) {
@@ -1615,9 +1769,22 @@ const actions = {
     // Settimana: il selettore torna sempre su oggi. Sezione già aperta: torna in cima.
     if (id === 'settimana') { S.ui.weekOffset = 0; S.ui.weekSel = todayYmd(); }
     if (id === S.view) { render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
-    if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300); S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
+    if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300);
+    if (id === 'mente' && Date.now() - S.brain.lastSync > 10 * 60 * 1000) setTimeout(() => brainSync(false), 300);
+    S.view = id; ls.set('view', id); S.ui.schedId = null; window.scrollTo(0, 0); render(); },
   // Un tag si seleziona e si deseleziona: senza tag vale la pagina (Oggi → To-do, altrove → Mente).
   kind(id) { S.ui.kind = S.ui.kind === id ? 'auto' : id; focusLater('cap'); render(); },
+  // Second brain
+  openNote(id) { S.ui.noteId = id; document.activeElement?.blur(); render(); },
+  closeNote() { S.ui.noteId = null; render(); },
+  bArea(id) { S.ui.bArea = S.ui.bArea === id ? '' : id; S.ui.bAll = false; render(); },
+  bAll() { S.ui.bAll = !S.ui.bAll; render(); },
+  brainSync() { brainSync(true); },
+  clearSearch() { S.ui.mSearch = ''; focusLater('mSearch'); render(); },
+  async copyNote() {
+    const n = (S.notes || []).find((x) => x.id === S.ui.noteId); if (!n) return;
+    try { await navigator.clipboard.writeText(`${n.title}\n\n${n.body}`); toast('Nota copiata'); } catch { toast('Copia non riuscita'); }
+  },
   saveCapture() { saveCapture(); },
   mic() { if (S.ui.listening) { stopListening(); render(); } else startListening(); },
   toggleDay() { S.ui.showDay = !S.ui.showDay; render(); },
@@ -1958,7 +2125,7 @@ let swipe = null;
 const scrollsX = (el) => { for (let n = el; n && n !== app; n = n.parentElement) { if (n.scrollWidth > n.clientWidth + 4 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true; } return false; };
 document.addEventListener('touchstart', (e) => {
   swipe = null;
-  if (isWide() || !S.session || e.touches.length !== 1 || S.ui.editId || S.ui.evEdit || S.ui.capOpen) return;
+  if (isWide() || !S.session || e.touches.length !== 1 || S.ui.editId || S.ui.evEdit || S.ui.capOpen || S.ui.noteId) return;
   const t = e.target;
   if (t.closest('.nav-bottom, .capture-wrap, input, textarea, select, .ev-sheet, [data-evkey], .fly, .lightbox') || scrollsX(t)) return;
   const p = e.touches[0];
@@ -2088,6 +2255,7 @@ app.addEventListener('submit', async (e) => {
 // Cmd/Ctrl+K apre la cattura su computer.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && S.ui.viewImg) { S.ui.viewImg = null; render(); return; }
+  if (e.key === 'Escape' && S.ui.noteId) { S.ui.noteId = null; render(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); S.ui.capOpen = true; focusLater('cap'); render(); }
 });
 
@@ -2098,7 +2266,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key.length !== 1 || e.key === ' ') return;               // solo caratteri stampabili (niente frecce, Invio, spazio iniziale)
   const t = e.target;
   if (t && t.closest && t.closest('input, textarea, select, [contenteditable]')) return; // stai già scrivendo altrove
-  if (S.ui.editId || S.ui.evEdit || S.ui.viewImg || !document.getElementById('cap')) return;
+  if (S.ui.editId || S.ui.evEdit || S.ui.viewImg || S.ui.noteId || !document.getElementById('cap')) return;
   e.preventDefault();
   S.ui.draft += e.key;
   S.ui.capOpen = true;

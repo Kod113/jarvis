@@ -40,6 +40,14 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Budget del mese = somma dei tetti, modificabile per singolo mese (localStorage `budget:YYYY-MM`). Categorie Università, Svapo, Giorgia tolte (restano nello storico; tolte anche dalle opzioni di Notion da Novembre 2026, i mesi nuovi copiano le opzioni dall'ultimo).
   Movimenti: icona della categoria (`CAT_PATHS` in app.js), riquadro blu = Apple Pay, verde = entrata.
   Entrate: categoria "Entrate" (o `direction: "in"`). Ogni risposta di `expense-ingest` ha `message`, mostrato nella notifica del comando.
+- Second brain (Mente): database Notion "Second brain / Note" (pagina `40c9756b457b81c0a091f88739fbafa1`, database `d18d183791664b8293adc6406e0ac28a`;
+  proprietà Nome, Area (select), Fonte, Modificata, Ha immagini, Archiviata). Contiene le 152 note importate da Google Keep il 2 nov 2026
+  (anche credenziali: David ha chiesto di includerle; mai stamparle in log o nel repo). Notion è la fonte: la funzione `brain`
+  (verify_jwt false; JWT del proprietario o `x-ingest-token`) copia le pagine nella tabella `brain_notes` (RLS sola lettura del proprietario),
+  in modo incrementale su `last_edited_time`, e toglie quelle cancellate. Serve che la pagina Second brain sia collegata all'integrazione
+  Notion di Jarvis (••• → Connessioni). L'app sincronizza aprendo Mente (max ogni 10 min) e col pulsante ↻; anche il workflow notion.yml.
+  UI: barra di ricerca unica in Mente (note + pensieri, senza accenti, tutte le parole), chip per Area, lettore `noteReaderHtml`
+  (spunte, link, evidenziazione, "Copia testo", "Apri in Notion"). Migration in `supabase/migrations/20261102_brain_notes.sql`.
 - Modifiche allo schema: sempre con una migration (`apply_migration`), poi `get_advisors` (security).
 - Integrazioni (Notion, Garmin, Comandi Rapidi/Siri, Google Calendar, AI per "Decide Jarvis"): vanno come **Supabase Edge Functions**
   o **GitHub Actions** (cron). Le chiavi solo nei secret, mai nel codice. Il repo è pubblico.
@@ -103,4 +111,4 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
 - Google Calendar: eventi e turni nel calendario; "Metti in calendario" crea l'evento.
 - "Decide Jarvis": oggi smistamento a parole chiave (`classify()` in app.js; nel dubbio è una task); in futuro AI.
 - Settimana: al posto del contatore task fatte (tolto) un blocco utile da decidere: idee proposte turni della settimana, allenamenti, sonno medio.
-- Mente: da approfondire più avanti (libri sincronizzati con Notion, argomenti da studiare).
+- Mente: Second brain fatto (nov 2026). Prossimi: libri sincronizzati con Notion, argomenti da studiare, nuove note dalla cattura verso Notion.

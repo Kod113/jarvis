@@ -23,6 +23,13 @@ const db = {
     { id:'e4', amount:1450, description:'Stipendio', category:'Entrate', method:'manual', direction:'in', spent_at:new Date(Date.now()-2*864e5).toISOString() },
     { id:'e3', amount:10.99, description:'Spotify', category:'Abbonamenti', method:'manual', spent_at:new Date(Date.now()-864e5).toISOString() },
   ],
+  brain_notes: [
+    { id: 'b1', title: 'FRASI DA SMISTARE', area: 'Crescita personale', edited_at: '2026-10-12', has_images: false, notion_url: 'https://www.notion.so/x', body: 'Cosa farebbe al mio posto una persona che stimo?\n---\nUccidi il mostro quando è piccolo\n\nLibertà è fare ciò che scegli' },
+    { id: 'b2', title: 'Canzoni musica video genio mind', area: 'Corso Mind', edited_at: '2026-10-17', has_images: false, notion_url: 'https://www.notion.so/y', body: '[ ] working day and night\n[ ] the middle\n[x] bones\n[x] cant hold us\nLink: https://www.youtube.com/watch?v=abc' },
+    { id: 'b3', title: 'Negoziazione', area: 'Comunicazione e relazioni', edited_at: '2026-02-11', has_images: false, notion_url: 'https://www.notion.so/z', body: 'Avversione alla perdita\n\nMirroring\n\nSilenzio (dopo proposte o domande)\n\nLabeling di emozioni' },
+    { id: 'b4', title: 'Caratteristiche casa', area: 'Casa', edited_at: '2026-08-22', has_images: true, notion_url: 'https://www.notion.so/w', body: 'ZONA\nnatura\nparco per correre\nfibra potente\nfacilità parcheggio' },
+    ...Array.from({length: 10}, (_, i) => ({ id: 'bx'+i, title: 'Nota di prova ' + (i+1), area: ['Tech','Gaming','Università'][i%3], edited_at: '2025-0' + (1+i%9) + '-10', has_images: false, notion_url: null, body: 'Testo di esempio numero ' + i + ' con la parola città dentro.' }))
+  ],
   health_daily: Array.from({length: 60}, (_, i) => i).map(i => ({ day: add(-i), sleep_minutes: 350 + (i*37) % 110, deep_min: 80, light_min: 250, rem_min: 100, awake_min: 15, sleep_score: 70 + (i*7)%20, resting_hr: 50 + (i*3)%6, hrv: 42 + (i*5)%14, hrv_status: 'BALANCED', body_battery_wake: 60 + (i*11)%35, readiness: 55 + (i*9)%40, readiness_level: 'MODERATE', steps: 6000 + i*900, ...(i===0 ? { nap_minutes: 35, naps: [{ start: new Date(new Date().setHours(13,10,0,0)).toISOString(), end: new Date(new Date().setHours(13,45,0,0)).toISOString(), min: 35 }] } : {}) })),
   activities: [
     { id: 11, day: ymd(today), start_time: new Date().toISOString(), type: 'running', name: 'Roma Corsa', duration_s: 2460, distance_m: 6200, avg_hr: 141, aerobic_te: 2.8, training_load: 62, zones_s: [120, 1500, 600, 200, 0] },
@@ -70,6 +77,7 @@ export function createClient(){
       async invoke(name, { body }) {
         (window.__calls = window.__calls || []).push([name, body]);
         if (name === 'notion-sync') return { data: body.action === 'archive' ? { ok: true } : { ok: true, pushed: 1, imported: 0, remaining: 0 }, error: null };
+        if (name === 'brain') return { data: { ok: true, total: 14, updated: 0, remaining: 0 }, error: null };
         if (name === 'garmin-refresh') return { data: { status: 'started' }, error: null };
         if (body.action === 'status') return { data: gstate, error: null };
         if (body.action === 'events') return { data: { events: gstate.connected ? events : [] }, error: null };
