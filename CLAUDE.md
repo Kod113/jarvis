@@ -41,7 +41,8 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Movimenti: icona della categoria (`CAT_PATHS` in app.js), riquadro blu = Apple Pay, verde = entrata.
   Entrate: categoria "Entrate" (o `direction: "in"`). Ogni risposta di `expense-ingest` ha `message`, mostrato nella notifica del comando.
 - Second brain (Mente): database Notion "Second brain / Note" (pagina `40c9756b457b81c0a091f88739fbafa1`, database `d18d183791664b8293adc6406e0ac28a`;
-  proprietà Nome, Area (select), Fonte, Modificata, Ha immagini, Archiviata). Contiene le 152 note importate da Google Keep il 2 nov 2026
+  proprietà Nome, Area (select), Fonte, Modificata, Ha immagini, Archiviata). Contiene le 152 note importate da Google Keep e 13 dal vault Obsidian (Fonte "Obsidian": Scienze cognitive + Java;
+  esclusa la cartella Libri, già nella pagina Notion "📚 Libri") il 2 nov 2026. Per David "second brain" = questa sezione di Notion
   (anche credenziali: David ha chiesto di includerle; mai stamparle in log o nel repo). Notion è la fonte: la funzione `brain`
   (verify_jwt false; JWT del proprietario o `x-ingest-token`) copia le pagine nella tabella `brain_notes` (RLS sola lettura del proprietario),
   in modo incrementale su `last_edited_time`, e toglie quelle cancellate. Serve che la pagina Second brain sia collegata all'integrazione
