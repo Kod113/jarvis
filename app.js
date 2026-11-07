@@ -1600,7 +1600,19 @@ function viewSpese() {
     <div class="list">${all.map((e) => {
       const d = new Date(e.spent_at);
       const when = e.source === 'notion' ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : `${dayLabel(ymd(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      return `<div class="li">${icon(e)}
+      const ed = u.exEdit;
+      if (ed && ed.id === e.id) return `<div class="exp-edit">
+        <p class="card-label"><span>Modifica movimento</span></p>
+        <div class="form-row">
+          <label for="edAmount" class="sr-only">Importo</label>
+          <input id="edAmount" class="field amount" data-model="edAmount" value="${esc(u.edAmount)}" inputmode="decimal">
+          <label for="edDesc" class="sr-only">Cosa</label>
+          <input id="edDesc" class="field grow" data-model="edDesc" value="${esc(u.edDesc)}">
+        </div>
+        ${e.direction === 'in' ? '' : `<div class="chips">${[...new Set([...CATEGORIES, e.category])].map((c) => `<button class="chip ${ed.cat === c ? 'on' : ''}" data-action="edCat" data-id="${esc(c)}">${esc(c)}</button>`).join('')}</div>`}
+        <div class="row-btns"><button class="btn grow" data-action="edCancel">Annulla</button><button class="btn dark grow2" data-action="edSave">Salva</button></div>
+      </div>`;
+      return `<div class="li" data-exp="${e.id}">${icon(e)}
         <div class="li-main"><span class="li-title">${esc(e.description)}</span><span class="li-meta">${esc(e.direction === 'in' ? 'Entrata' : e.category)} · ${methLabel[e.method] || e.method} · ${when}</span></div>
         <span class="mono ${e.direction === 'in' ? 'pos' : ''}">${e.direction === 'in' ? '+' : '−'}${eur(e.amount)}</span>
         <button class="x-btn" data-action="delExpense" data-id="${e.id}" aria-label="Elimina ${esc(e.description)}">${I.x}</button>
@@ -2158,6 +2170,24 @@ const actions = {
       if (S.notion.state !== 'off') notionSync(false);
     } catch (err) { fail(err); }
   },
+  edCat(id) { S.ui.exEdit.cat = id; render(); },
+  edCancel() { S.ui.exEdit = null; render(); },
+  async edSave() {
+    const ed = S.ui.exEdit; const e = ed && S.expenses.find((x) => x.id === ed.id); if (!e) return;
+    const amount = Number(String(S.ui.edAmount).replace(/[€\s]/g, '').replace(',', '.'));
+    if (!amount || amount < 0) { toast('Scrivi un importo valido'); return; }
+    if (!S.ui.edDesc.trim()) { toast('Scrivi una descrizione'); return; }
+    const patch = { amount, description: S.ui.edDesc.trim(), category: e.direction === 'in' ? e.category : ed.cat };
+    const old = { amount: e.amount, description: e.description, category: e.category };
+    Object.assign(e, patch); S.ui.exEdit = null; render();
+    const { error } = await sb.from('expenses').update(patch).eq('id', e.id);
+    if (error) { Object.assign(e, old); render(); fail(error); return; }
+    toast(old.category !== patch.category ? `Spostata in ${patch.category}` : 'Movimento aggiornato');
+    try {
+      const { data, error: err } = await sb.functions.invoke('notion-sync', { body: { action: 'update', id: e.id } });
+      if (err || data?.error) throw err || new Error(data.error);
+    } catch (err) { console.warn(err); toast('Salvata in Jarvis, ma non su Notion: riprova a sincronizzare'); }
+  },
   async delExpense(id) {
     const e = S.expenses.find((x) => x.id === id); if (!e) return;
     if (!confirm(`Eliminare "${e.description}" (€${eur(e.amount)})?${e.notion_page_id ? ' Verrà tolta anche da Notion.' : ''}`)) return;
@@ -2372,6 +2402,7 @@ app.addEventListener('keydown', async (e) => {
     try { await addTask(title); render(); } catch (err) { fail(err); }
   }
   if (id === 'exAmount' || id === 'exDesc') { e.preventDefault(); actions.saveExpense(); }
+  if (id === 'edAmount' || id === 'edDesc') { e.preventDefault(); actions.edSave(); }
 });
 
 // Chiudi il pannello dei tag toccando fuori dalla barra di cattura (senza rubare il tocco ai pulsanti).
@@ -2453,6 +2484,28 @@ if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', fitKeyboard);
   window.visualViewport.addEventListener('scroll', fitKeyboard);
 }
+
+// ---- Movimenti: tieni premuto (o tasto destro sul computer) per modificare categoria, importo e descrizione.
+let expPress = null;
+function openExpEdit(id) {
+  const e = S.expenses.find((x) => x.id === id); if (!e) return;
+  S.ui.exEdit = { id, cat: e.category }; S.ui.edAmount = Number(e.amount).toFixed(2).replace('.', ','); S.ui.edDesc = e.description;
+  if (navigator.vibrate) navigator.vibrate(10);
+  render(); focusLater('edDesc');
+}
+app.addEventListener('pointerdown', (e) => {
+  const li = e.target.closest('.li[data-exp]'); if (!li || e.button > 0 || e.target.closest('button')) return;
+  li.classList.add('pressing');
+  expPress = { li, x: e.clientX, y: e.clientY, timer: setTimeout(() => { expPress = null; li.classList.remove('pressing'); openExpEdit(li.dataset.exp); }, 450) };
+});
+const expPressEnd = () => { if (expPress) { clearTimeout(expPress.timer); expPress.li.classList.remove('pressing'); expPress = null; } };
+app.addEventListener('pointermove', (e) => { if (expPress && Math.hypot(e.clientX - expPress.x, e.clientY - expPress.y) > 8) expPressEnd(); });
+app.addEventListener('pointerup', expPressEnd);
+app.addEventListener('pointercancel', expPressEnd);
+app.addEventListener('contextmenu', (e) => {
+  const li = e.target.closest('.li[data-exp]'); if (!li) return;
+  e.preventDefault(); expPressEnd(); if (!S.ui.exEdit || S.ui.exEdit.id !== li.dataset.exp) openExpEdit(li.dataset.exp);
+});
 
 // ---- Blocchi evento: trascina per spostare, maniglia in basso per allungare/accorciare, tocco per modificare.
 // Su telefono il trascinamento parte con una pressione prolungata (così lo scorrimento della pagina resta normale).

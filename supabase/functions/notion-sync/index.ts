@@ -2,7 +2,7 @@
 // Mese finanziario: dal 27 al 26, chiamato con il mese in cui finisce (es. "Novembre 2026" = 27 ott – 26 nov).
 // verify_jwt = false. Accesso: JWT del proprietario (dall'app) oppure header x-ingest-token (GitHub Actions).
 // Segreto: NOTION_TOKEN = token di un'integrazione interna Notion con accesso alla pagina "Budgeting".
-// Azioni (body.action): status · sync (default) · archive { pageId }.
+// Azioni (body.action): status · sync (default) · archive { pageId } · update { id } (riscrive su Notion una spesa modificata in Jarvis).
 import { admin, env } from '../_shared/google.ts';
 
 const OWNER_EMAIL = 'davsorm@gmail.com';
@@ -272,6 +272,20 @@ Deno.serve(async (req) => {
     }
     if (body.action === 'archive' && body.pageId) {
       await notion(`/pages/${body.pageId}`, 'PATCH', { archived: true });
+      return json({ ok: true });
+    }
+    if (body.action === 'update' && body.id) {
+      const { data: e } = await db.from('expenses').select('*').eq('id', body.id).eq('user_id', userId).maybeSingle();
+      if (!e) return json({ error: 'Spesa non trovata' }, 404);
+      if (!e.notion_page_id) return json({ ok: true, pushed: await push(ctx) });
+      const m = await monthRow(ctx, e.month_key || financialKey(new Date(e.spent_at)));
+      if (!m) return json({ error: 'Mese non trovato su Notion' }, 404);
+      const sc = await schemaOf(m.database_id);
+      const props: Any = {};
+      if (sc.title) props[sc.title] = { title: [{ text: { content: e.description } }] };
+      if (sc.number) props[sc.number] = { number: (e.direction === 'in' ? 1 : -1) * Number(e.amount) };
+      if (sc.cats && e.direction !== 'in') props[sc.cats] = sc.catsType === 'multi_select' ? { multi_select: [{ name: e.category }] } : { select: { name: e.category } };
+      await notion(`/pages/${e.notion_page_id}`, 'PATCH', { properties: props });
       return json({ ok: true });
     }
     return json(await sync(ctx));

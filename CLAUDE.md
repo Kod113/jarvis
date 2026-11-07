@@ -39,6 +39,8 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Tetti mensili per categoria: `CAT_CAP` in app.js (solo Benza, Cibo, Spesa, Shopping, Fun, Yugi, Abbonamenti, Formazione; le altre senza tetto).
   Budget del mese = somma dei tetti, modificabile per singolo mese (localStorage `budget:YYYY-MM`). Categorie Università, Svapo, Giorgia tolte (restano nello storico; tolte anche dalle opzioni di Notion da Novembre 2026, i mesi nuovi copiano le opzioni dall'ultimo).
   Movimenti: icona della categoria (`CAT_PATHS` in app.js), riquadro blu = Apple Pay, verde = entrata.
+  Tieni premuto un movimento (tasto destro sul computer) = modifica categoria, importo, descrizione (`openExpEdit` → `edSave`), poi
+  `notion-sync` azione `update { id }` riscrive la riga su Notion (se non è ancora su Notion la invia).
   Entrate: categoria "Entrate" (o `direction: "in"`). Ogni risposta di `expense-ingest` ha `message`, mostrato nella notifica del comando.
 - Second brain (Mente): database Notion "Second brain / Note" (pagina `40c9756b457b81c0a091f88739fbafa1`, database `d18d183791664b8293adc6406e0ac28a`;
   proprietà Nome, Area (select), Fonte, Modificata, Ha immagini, Archiviata). Contiene le 152 note importate da Google Keep e 13 dal vault Obsidian (Fonte "Obsidian": Scienze cognitive + Java;

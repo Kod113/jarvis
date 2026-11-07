@@ -612,3 +612,9 @@ mark { background: var(--soft); color: var(--soft-ink, var(--ink)); border-radiu
 [data-cap] button.li-title { display: block; width: 100%; border: 0; background: transparent; padding: 0; text-align: left; color: var(--ink); font: inherit; font-size: 15px; cursor: text; overflow-wrap: anywhere; }
 [data-cap] .m-btn { width: 36px; padding: 0; }
 .sync-note svg { vertical-align: -2px; }
+
+/* Movimento in modifica (tieni premuto) */
+.li[data-exp] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: background .2s, transform .2s; border-radius: 10px; }
+.li[data-exp].pressing { background: var(--line-2); transform: scale(.98); }
+.exp-edit { padding: 12px 0; border-top: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 10px; }
+.exp-edit .card-label { margin: 0; }
