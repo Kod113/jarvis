@@ -17,10 +17,14 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   - Le task con data+ora diventano eventi sul calendario principale (`tasks.gcal_event_id`, `extendedProperties.private.jarvisTaskId`).
   - Notion Calendar legge Google Calendar: nessuna integrazione separata.
 - Garmin: `.github/workflows/garmin.yml` (5 volte al giorno + manuale + push su `tools/garmin/**`, al push sincronizza 30 giorni) esegue
-  `tools/garmin/sync.py` (libreria non ufficiale `garminconnect`), che invia a `garmin-ingest` (verify_jwt false, header `x-ingest-token` =
+  `tools/garmin/sync.py` in modo **ibrido**: API ufficiale Garmin "Personal API" (`garmin-connect-personal-api-python`, sola lettura,
+  segreto `GARMIN_PERSONAL_API_KEY`, chiave creata da David su connect.garmin.com/app/settings/personalApiToken, scade dopo max 1 anno)
+  per sonno, HRV, FC, Body Battery, stress, passi e allenamenti; libreria non ufficiale `garminconnect` solo per la Prontezza (che
+  l'ufficiale non ha) e come riserva completa se all'ufficiale manca il sonno di un giorno. Ai push il log mostra i NOMI dei campi
+  (mai i valori) di sonno/HRV ufficiali (`GARMIN_DEBUG_KEYS`). Lo script invia a `garmin-ingest` (verify_jwt false, header `x-ingest-token` =
   segreto `JARVIS_INGEST_TOKEN`). Tabelle `health_daily` (sonno, FC, HRV, Body Battery, prontezza, passi, `nap_minutes` + `naps` jsonb
   [{start,end,min}] = sonno di giorno da `dailyNapDTOS`) e `activities`.
-  Segreti GitHub: `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `JARVIS_INGEST_TOKEN`. Token Garmin in cache cifrati (repo pubblico: mai stampare dati).
+  Segreti GitHub: `GARMIN_PERSONAL_API_KEY`, `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `JARVIS_INGEST_TOKEN`. Token Garmin in cache cifrati (repo pubblico: mai stampare dati).
   Per rilanciare la sync senza token gh: aggiorna `tools/garmin/LAST_TRIGGER` e fai push.
   Sync su richiesta: funzione `garmin-refresh` (verify_jwt false, solo il proprietario) avvia `workflow_dispatch` con il segreto Supabase
   `JARVIS_GITHUB_TOKEN` (PAT fine-grained, Actions read/write sul solo repo). L'app la chiama da sola al mattino (4–14) se manca il sonno

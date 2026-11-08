@@ -45,11 +45,13 @@ jobs:
           if [ -f garmin-tokens.enc ]; then
             openssl enc -d -aes-256-cbc -pbkdf2 -pass env:GARMIN_PASSWORD -in garmin-tokens.enc | tar xzf - -C "$GARMINTOKENS" || echo "Token non validi, nuovo accesso"
           fi
-      - run: pip install --quiet garminconnect==0.3.20
+      - run: pip install --quiet garminconnect==0.3.20 garmin-connect-personal-api-python==1.0.0
       - name: Sincronizza
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          GARMIN_PERSONAL_API_KEY: ${{ secrets.GARMIN_PERSONAL_API_KEY }}
+          GARMIN_DEBUG_KEYS: ${{ github.event_name == 'push' && '1' || '' }}
           JARVIS_INGEST_TOKEN: ${{ secrets.JARVIS_INGEST_TOKEN }}
           GARMIN_DAYS: ${{ github.event.inputs.days || (github.event_name == 'push' && '30') || '3' }}
         run: python tools/garmin/sync.py

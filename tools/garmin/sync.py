@@ -1,7 +1,9 @@
 """Scarica da Garmin Connect sonno, parametri vitali e allenamenti e li manda a Jarvis.
 
 Gira su GitHub Actions (vedi .github/workflows/garmin.yml). Variabili d'ambiente:
-  GARMIN_EMAIL, GARMIN_PASSWORD   credenziali Garmin (segreti del repo)
+  GARMIN_PERSONAL_API_KEY          chiave dell'API ufficiale Garmin (sola lettura): sonno, HRV, FC, Body Battery, passi, allenamenti
+  GARMIN_EMAIL, GARMIN_PASSWORD   credenziali Garmin per il metodo vecchio (libreria non ufficiale): solo Prontezza,
+                                  e riserva completa se l'API ufficiale non risponde o non ha il sonno di un giorno
   JARVIS_INGEST_TOKEN              token condiviso con la funzione Supabase garmin-ingest
   GARMIN_DAYS                      quanti giorni indietro sincronizzare (default 3)
   GARMINTOKENS                     cartella dove salvare i token di accesso (cache tra un'esecuzione e l'altra)
@@ -101,6 +103,16 @@ def day_row(api, day):
     return {k: v for k, v in row.items() if v is not None or k == "day"}
 
 
+def readiness_row(api, day):
+    """Solo la Prontezza (Training Readiness), che l'API ufficiale non fornisce."""
+    ready = safe(api.get_training_readiness, day.isoformat()) or []
+    ready = ready[0] if isinstance(ready, list) and ready else (ready if isinstance(ready, dict) else {})
+    row = {"day": day.isoformat(), "readiness": ready.get("score"), "readiness_level": ready.get("level")}
+    if isinstance(row["readiness"], float):
+        row["readiness"] = round(row["readiness"])
+    return {k: v for k, v in row.items() if v is not None or k == "day"}
+
+
 def activity_row(a):
     start_local = a.get("startTimeLocal") or ""
     zones = [a.get(f"hrTimeInZone_{i}") for i in range(1, 6)]
@@ -121,29 +133,176 @@ def activity_row(a):
     }
 
 
-def main():
-    email, password = os.environ.get("GARMIN_EMAIL"), os.environ.get("GARMIN_PASSWORD")
-    token = os.environ.get("JARVIS_INGEST_TOKEN")
-    if not (email and password and token):
-        print("Mancano GARMIN_EMAIL, GARMIN_PASSWORD o JARVIS_INGEST_TOKEN nei segreti del repo: salto.")
-        return
+# ---------------------------------------------------------------------------------------------
+# API ufficiale Garmin ("Personal API", sola lettura, chiave GARMIN_PERSONAL_API_KEY).
+# I formati non sono documentati: i valori si cercano per nome del campo ovunque nel JSON.
+
+def walk(obj):
+    """Tutti i dizionari annidati in obj."""
+    if isinstance(obj, dict):
+        yield obj
+        for v in obj.values():
+            yield from walk(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from walk(v)
+
+
+def find(d, *names):
+    """Primo valore numerico/stringa trovato tra i nomi indicati (anche a percorso 'a.b.c'), cercando in profondità."""
+    for name in names:
+        if "." in name:
+            v = g(d, *name.split("."))
+            if v is not None and not isinstance(v, (dict, list)):
+                return v
+            continue
+        for x in walk(d):
+            v = x.get(name)
+            if v is not None and not isinstance(v, (dict, list, bool)):
+                return v
+    return None
+
+
+def by_day(payload):
+    """{giorno: record} dai riepiloghi giornalieri (il record più ricco vince)."""
+    out = {}
+    for x in walk(payload):
+        day = x.get("calendarDate") or x.get("summaryDate")
+        if isinstance(day, str) and len(day) >= 10:
+            day = day[:10]
+            if len(json.dumps(x, default=str)) > len(json.dumps(out.get(day, {}), default=str)):
+                out[day] = x
+    return out
+
+
+def keys_of(payload, limit=60):
+    """Solo i NOMI dei campi (mai i valori: il repo è pubblico), per capire i formati nei log."""
+    ks = set()
+    for x in walk(payload):
+        ks.update(k for k, v in x.items() if not isinstance(v, (dict, list)))
+    return ", ".join(sorted(ks)[:limit])
+
+
+def official_data(key, start, end):
+    """Giorni e allenamenti dall'API ufficiale. Ritorna ({giorno: riga}, [allenamenti]) oppure None."""
+    try:
+        from garmin_personal_api import GarminPersonalApiClient, PersonalApiAuthenticator
+        auth = PersonalApiAuthenticator(bearer_token_cache_file=os.path.expanduser("~/.garmin-personal-token.json"))
+        api = GarminPersonalApiClient(auth.obtain_token(key).access_token)
+    except Exception as e:
+        print(f"API ufficiale non disponibile ({type(e).__name__}): uso solo il metodo vecchio.")
+        return None
+
+    s, e_ = start.isoformat(), end.isoformat()
+    daily = safe(api.get_daily_summaries, s, e_) or {}
+    sleep = safe(api.get_daily_sleep_summaries, s, e_) or {}
+    hrv = safe(api.get_daily_hrv_summaries, s, e_) or {}
+    if os.environ.get("GARMIN_DEBUG_KEYS"):
+        print("  campi sonno:", keys_of(sleep))
+        print("  campi HRV:", keys_of(hrv))
+    D, SL, H = by_day(daily), by_day(sleep), by_day(hrv)
+
+    rows = {}
+    for i in range((end - start).days + 1):
+        day = (start + timedelta(days=i)).isoformat()
+        d, sl, h = D.get(day) or {}, SL.get(day) or {}, H.get(day) or {}
+        stress = find(d, "stress.avgLevel", "averageStressLevel")
+        row = {
+            "sleep_minutes": mins(find(sl, "sleepTimeSeconds", "durationInSeconds", "totalSleepSeconds")),
+            "sleep_score": find(sl, "sleepScores.overall.value", "overallSleepScore", "sleepScore"),
+            "deep_min": mins(find(sl, "deepSleepSeconds", "deepSleepDurationInSeconds")),
+            "light_min": mins(find(sl, "lightSleepSeconds", "lightSleepDurationInSeconds")),
+            "rem_min": mins(find(sl, "remSleepSeconds", "remSleepInSeconds")),
+            "awake_min": mins(find(sl, "awakeSleepSeconds", "awakeDurationInSeconds")),
+            "resting_hr": find(d, "heartRate.restingValue", "restingHeartRate", "restingHeartRateInBeatsPerMinute"),
+            "hrv": find(h, "hrvSummary.lastNightAvg", "lastNightAvg", "lastNightAverage") or find(sl, "avgOvernightHrv"),
+            "hrv_status": find(h, "hrvSummary.status", "status") or find(sl, "hrvStatus"),
+            "body_battery_wake": find(d, "bodyBattery.atWakeValue", "bodyBatteryAtWakeTime"),
+            "body_battery_high": find(d, "bodyBattery.maxValue", "bodyBatteryHighestValue"),
+            "body_battery_low": find(d, "bodyBattery.minValue", "bodyBatteryLowestValue"),
+            "stress_avg": stress if isinstance(stress, (int, float)) and stress >= 0 else None,
+            "steps": find(d, "movement.steps.value", "totalSteps"),
+        }
+        rows[day] = {k: v for k, v in row.items() if v is not None}
+
+    acts = []
+    raw = safe(lambda: api.search_activities(start=0, limit=100, start_date=s, end_date=e_)) or []
+    raw = raw if isinstance(raw, list) else (raw.get("activityList") or [])
+    for a in raw:
+        if a.get("activityId") and (a.get("startTimeLocal") or "")[:10] >= s:
+            acts.append(activity_row(a))
+    return rows, acts
+
+
+def merge(old, new):
+    """Riga del metodo vecchio + valori dell'API ufficiale (l'ufficiale vince dove c'è)."""
+    out = dict(old)
+    for k, v in new.items():
+        if v is not None:
+            out[k] = round(v) if isinstance(v, float) and k not in ("hrv_status",) else v
+    return out
+
+
+def legacy_api(email, password):
+    """Accesso col metodo vecchio (libreria non ufficiale): serve per la Prontezza. None se non riesce."""
+    if not (email and password):
+        return None
     store = os.path.expanduser(os.environ.get("GARMINTOKENS", "~/.garminconnect"))
     os.makedirs(store, exist_ok=True)
-
-    api = Garmin(email, password)
-    status, _ = api.login(store)
-    if status == "needs_mfa":
-        sys.exit("Garmin chiede il codice di verifica a due fattori: serve la configurazione MFA (vedi CLAUDE.md).")
     try:
-        api.client.dump(store)
-    except Exception:
-        pass
+        api = Garmin(email, password)
+        status, _ = api.login(store)
+        if status == "needs_mfa":
+            print("Metodo vecchio: Garmin chiede la verifica a due fattori, salto la Prontezza.")
+            return None
+        try:
+            api.client.dump(store)
+        except Exception:
+            pass
+        return api
+    except Exception as e:
+        print(f"Metodo vecchio non disponibile ({type(e).__name__}): salto la Prontezza.")
+        return None
+
+
+def main():
+    email, password = os.environ.get("GARMIN_EMAIL"), os.environ.get("GARMIN_PASSWORD")
+    key = os.environ.get("GARMIN_PERSONAL_API_KEY")
+    token = os.environ.get("JARVIS_INGEST_TOKEN")
+    if not token or not (key or (email and password)):
+        print("Mancano JARVIS_INGEST_TOKEN o le credenziali Garmin nei segreti del repo: salto.")
+        return
 
     n = max(1, int(os.environ.get("GARMIN_DAYS") or 3))
     today = date.today()
-    days = [day_row(api, today - timedelta(days=i)) for i in range(n)]
-    acts_raw = safe(api.get_activities_by_date, (today - timedelta(days=n - 1)).isoformat(), today.isoformat()) or []
-    activities = [activity_row(a) for a in acts_raw if a.get("activityId")]
+    start = today - timedelta(days=n - 1)
+
+    official = official_data(key, start, today) if key else None
+    legacy = legacy_api(email, password)
+    if official is None and legacy is None:
+        sys.exit("Né l'API ufficiale né il metodo vecchio funzionano: controlla i segreti Garmin.")
+
+    days, activities = [], []
+    for i in range(n):
+        day = today - timedelta(days=i)
+        new = official[0].get(day.isoformat(), {}) if official else {}
+        if legacy:
+            # Con l'API ufficiale il metodo vecchio serve solo per la Prontezza; se all'ufficiale manca il sonno, fa da riserva completa.
+            old = readiness_row(legacy, day) if new.get("sleep_minutes") else day_row(legacy, day)
+        else:
+            old = {"day": day.isoformat()}
+        days.append(merge(old, new))
+
+    if official:
+        activities = official[1]
+    if legacy and not activities:
+        acts_raw = safe(legacy.get_activities_by_date, start.isoformat(), today.isoformat()) or []
+        activities = [activity_row(a) for a in acts_raw if a.get("activityId")]
+
+    src = " + ".join(x for x, ok in (("API ufficiale", official), ("metodo vecchio (Prontezza)", legacy)) if ok)
+    filled = sum(1 for d in days if d.get("sleep_minutes"))
+    ready = sum(1 for d in days if d.get("readiness") is not None)
+    print(f"Fonti: {src}. Giorni con sonno: {filled}/{n}, con Prontezza: {ready}/{n}.")
 
     payload = json.dumps({"days": days, "activities": activities}).encode()
     req = urllib.request.Request(INGEST_URL, data=payload, method="POST",
