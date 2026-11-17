@@ -166,7 +166,7 @@ const S = {
   notion: { state: 'idle', lastSync: 0, msg: '' },
   notes: [],                                         // Second brain (tabella brain_notes, copia del database Notion)
   brain: { state: 'idle', lastSync: 0, msg: '' },
-  loadedMonths: new Set(),
+  loadedMonths: new Set(), loadedCats: new Set(),
   healthDays: [],
   garminSync: 'idle',
   activities: [],
@@ -182,7 +182,7 @@ const S = {
     weekTodosOpen: ls.get('weekTodosOpen', true),
     weekOffset: 0, weekSel: todayYmd(),
     monthOffset: 0, calSel: todayYmd(),
-    spMonth: 0, adding: false, exAmount: '', exDesc: '', exCat: 'Cibo', exMethod: 'manual',
+    spMonth: 0, spCat: null, spCatAll: false, adding: false, exAmount: '', exDesc: '', exCat: 'Cibo', exMethod: 'manual',
     mFilter: 'tutto', bSearch: '', noteId: null, bArea: '', bAll: false,
     // Modifica nota (neId = id della nota o 'new' per una nota nuova)
     neId: null, neTitle: '', neArea: '', neBody: '', neBusy: false,
@@ -1485,7 +1485,7 @@ async function notionSync(manual = false) {
     }
     if (r.status === 'not_configured') { S.notion = { state: 'off', lastSync: Date.now(), msg: '' }; render(); return; }
     S.notion = { state: 'ok', lastSync: Date.now(), msg: '' };
-    S.loadedMonths = new Set();
+    S.loadedMonths = new Set(); S.loadedCats = new Set();
     await loadAll();
     await ensureMonthLoaded(shiftKey(financialKey(new Date()), S.ui.spMonth));
     render();
@@ -1530,7 +1530,102 @@ const CAT_PATHS = {
 const CAT_DEFAULT = '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="7.5" r="1.5"/>';
 const catIcon = (cat) => `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CAT_PATHS[cat] || CAT_DEFAULT}</svg>`;
 
+// Riga di un movimento (usata nella lista del mese e nella pagina di una categoria).
+const METH_LABEL = { nfc: 'Apple Pay', manual: 'manuale', online: 'online', notion: 'Notion' };
+function expIconHtml(e) {
+  const cat = e.direction === 'in' ? 'Entrate' : e.category;
+  const tint = e.direction === 'in' ? ' in' : e.method === 'nfc' ? ' nfc' : '';
+  return `<span class="mv-icon${tint}" title="${esc(cat)}">${catIcon(cat)}</span>`;
+}
+function expRowHtml(e) {
+  const u = S.ui;
+  const d = new Date(e.spent_at);
+  const when = e.source === 'notion' ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : `${dayLabel(ymd(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const ed = u.exEdit;
+  if (ed && ed.id === e.id) return `<div class="exp-edit">
+    <p class="card-label"><span>Modifica movimento</span></p>
+    <div class="form-row">
+      <label for="edAmount" class="sr-only">Importo</label>
+      <input id="edAmount" class="field amount" data-model="edAmount" value="${esc(u.edAmount)}" inputmode="decimal">
+      <label for="edDesc" class="sr-only">Cosa</label>
+      <input id="edDesc" class="field grow" data-model="edDesc" value="${esc(u.edDesc)}">
+    </div>
+    ${e.direction === 'in' ? '' : `<div class="chips">${[...new Set([...CATEGORIES, e.category])].map((c) => `<button class="chip ${ed.cat === c ? 'on' : ''}" data-action="edCat" data-id="${esc(c)}">${esc(c)}</button>`).join('')}</div>`}
+    <div class="row-btns"><button class="btn grow" data-action="edCancel">Annulla</button><button class="btn dark grow2" data-action="edSave">Salva</button></div>
+  </div>`;
+  return `<div class="li" data-exp="${e.id}">${expIconHtml(e)}
+    <div class="li-main"><span class="li-title">${esc(e.description)}</span><span class="li-meta">${esc(e.direction === 'in' ? 'Entrata' : e.category)} · ${METH_LABEL[e.method] || e.method} · ${when}</span></div>
+    <span class="mono ${e.direction === 'in' ? 'pos' : ''}">${e.direction === 'in' ? '+' : '−'}${eur(e.amount)}</span>
+    <button class="x-btn" data-action="delExpense" data-id="${e.id}" aria-label="Elimina ${esc(e.description)}">${I.x}</button>
+  </div>`;
+}
+const expMonthKey = (e) => e.month_key || financialKey(new Date(e.spent_at));
+
+// Tutto lo storico di una categoria (per "Tutti i mesi"): caricato una volta per categoria.
+async function ensureCatLoaded(cat) {
+  if (S.loadedCats.has(cat)) return;
+  S.loadedCats.add(cat);
+  const { data, error } = await sb.from('expenses').select('*').eq('category', cat).order('spent_at', { ascending: false }).limit(5000);
+  if (error) { S.loadedCats.delete(cat); toast('Non riesco a caricare lo storico'); return; }
+  const ids = new Set(S.expenses.map((e) => e.id));
+  S.expenses.push(...(data || []).filter((e) => !ids.has(e.id)));
+  render();
+}
+
+// Pagina di una categoria: tocca una categoria in "Per categoria". Mese scelto oppure tutti i mesi, raggruppati per mese.
+function viewSpeseCat() {
+  const u = S.ui, cat = u.spCat;
+  const curKey = financialKey(new Date());
+  const key = shiftKey(curKey, u.spMonth);
+  const { start, end } = keyRange(key);
+  const isIn = cat === 'Entrate';
+  const match = (e) => (isIn ? (e.direction === 'in' || e.category === 'Entrate') : (e.direction !== 'in' && e.category === cat));
+  if (u.spCatAll) ensureCatLoaded(cat); else ensureMonthLoaded(key);
+  const rows = S.expenses.filter((e) => match(e) && (u.spCatAll || expMonthKey(e) === key)).sort((a, b) => b.spent_at.localeCompare(a.spent_at));
+  const total = rows.reduce((a, e) => a + Number(e.amount), 0);
+  const cap = u.spCatAll || isIn ? null : capOf(cat);
+  const isCurrent = u.spMonth === 0;
+  const back = `<button class="cat-back" data-action="closeCat" aria-label="Torna a Spese">${I.left}<span>Spese</span></button>`;
+  const nav = u.spCatAll ? '' : `<div class="week-nav">
+      <button data-action="spMonth" data-id="-1" aria-label="Mese precedente">${I.left}</button>
+      <button data-action="spMonth" data-id="1" aria-label="Mese successivo" ${isCurrent ? 'disabled' : ''}>${I.right}</button></div>`;
+  let hero;
+  if (u.spCatAll) {
+    const months = [...new Set(rows.map(expMonthKey))];
+    const avg = months.length ? total / months.length : 0;
+    hero = `<div class="hero">
+      <p class="lbl">Tutti i mesi · ${rows.length} ${rows.length === 1 ? 'movimento' : 'movimenti'}</p>
+      <span class="big">€${eur(total)}</span>
+      <div class="foot"><span>${months.length} ${months.length === 1 ? 'mese' : 'mesi'}</span><span>Media €${eur(avg)} al mese</span></div>
+    </div>`;
+  } else {
+    const r = cap ? total / cap : 0;
+    hero = `<div class="hero">
+      <p class="lbl">${keyName(key)}${isCurrent ? ' · mese in corso' : ''} · ${rows.length} ${rows.length === 1 ? 'movimento' : 'movimenti'}</p>
+      <div style="display:flex;align-items:baseline;gap:8px"><span class="big">€${eur(total)}</span>${cap ? `<span class="of" style="text-decoration:none">di €${Number.isInteger(cap) ? cap : eur(cap)}</span>` : ''}</div>
+      ${cap ? `<div class="bar"><div style="width:${Math.min(100, Math.round(r * 100))}%"></div></div>
+      <div class="foot"><span>${total <= cap ? `Restano €${eur(cap - total)}` : `Sforato di €${eur(total - cap)}`}</span><span>${rows.length ? `Media €${eur(total / rows.length)} a movimento` : ''}</span></div>` : ''}
+    </div>`;
+  }
+  let list;
+  if (!rows.length) list = `<p class="empty">${u.spCatAll && !S.loadedCats.has(cat) ? 'Carico…' : 'Nessun movimento.'}</p>`;
+  else if (u.spCatAll) {
+    const groups = [];
+    rows.forEach((e) => { const k = expMonthKey(e); const g = groups[groups.length - 1]; if (g && g.k === k) g.items.push(e); else groups.push({ k, items: [e] }); });
+    list = groups.map((g) => `<div class="cat-month"><span>${keyName(g.k)}</span><span class="mono">€${eur(g.items.reduce((a, e) => a + Number(e.amount), 0))}</span></div>${g.items.map(expRowHtml).join('')}`).join('');
+  } else list = rows.map(expRowHtml).join('');
+  return `${headHtml(u.spCatAll ? 'Tutto lo storico' : `${shortDate(start)} – ${shortDate(end)}`, cat, nav)}
+  <div class="cat-head">${back}<span class="mv-icon${isIn ? ' in' : ''}">${catIcon(cat)}</span></div>
+  ${hero}
+  <div class="chips">${[[false, keyName(key)], [true, 'Tutti i mesi']].map(([v, l]) => `<button class="chip blue ${u.spCatAll === v ? 'on' : ''}" data-action="catRange" data-id="${v ? 1 : 0}">${esc(l)}</button>`).join('')}</div>
+  <div class="card">
+    <p class="card-label"><span>Movimenti</span><span>${rows.length}</span></p>
+    <div class="list">${list}</div>
+  </div>`;
+}
+
 function viewSpese() {
+  if (S.ui.spCat) return viewSpeseCat();
   const u = S.ui;
   const curKey = financialKey(new Date());
   const key = shiftKey(curKey, u.spMonth);
@@ -1548,12 +1643,6 @@ function viewSpese() {
   const byCat = {};
   outs.forEach((e) => { byCat[e.category] = (byCat[e.category] || 0) + Number(e.amount); });
   const cats = Object.entries(byCat).sort((a, c) => c[1] - a[1]);
-  const icon = (e) => {
-    const cat = e.direction === 'in' ? 'Entrate' : e.category;
-    const tint = e.direction === 'in' ? ' in' : e.method === 'nfc' ? ' nfc' : '';
-    return `<span class="mv-icon${tint}" title="${esc(cat)}">${catIcon(cat)}</span>`;
-  };
-  const methLabel = { nfc: 'Apple Pay', manual: 'manuale', online: 'online', notion: 'Notion' };
   const ns = S.notion;
   const notionLine = ns.state === 'off' ? '<span>Notion non ancora collegato</span>'
     : ns.state === 'running' ? '<span>Sincronizzo con Notion…</span>'
@@ -1582,42 +1671,22 @@ function viewSpese() {
     <div class="bar"><div style="width:${pct}%"></div></div>
     <div class="foot"><span>${total <= budget ? `Restano €${eur(budget - total)}` : `Sforato di €${eur(total - budget)}`}</span>
       <span>${isCurrent ? (dl === 0 ? 'Oggi arriva lo stipendio' : `${dl} ${dl === 1 ? 'giorno' : 'giorni'} allo stipendio`) : ''}</span></div>
-    ${income ? `<div class="foot"><span>Entrate €${eur(income)}</span><span>Saldo ${income - total >= 0 ? '+' : '−'}€${eur(Math.abs(income - total))}</span></div>` : ''}
+    ${income ? `<div class="foot"><button class="of" data-action="openCat" data-id="Entrate">Entrate €${eur(income)}</button><span>Saldo ${income - total >= 0 ? '+' : '−'}€${eur(Math.abs(income - total))}</span></div>` : ''}
   </div>
   <div class="card">
     <p class="card-label"><span>Per categoria</span></p>
     ${cats.length ? cats.map(([c, v]) => {
       const cap = capOf(c);
-      if (cap == null) return `<div class="cat-row"><div class="cat-top"><span>${esc(c)}</span><span class="mono"><b>€${eur(v)}</b></span></div></div>`;
+      if (cap == null) return `<button class="cat-row" data-action="openCat" data-id="${esc(c)}"><div class="cat-top"><span>${esc(c)}${I.right}</span><span class="mono"><b>€${eur(v)}</b></span></div></button>`;
       const r = v / cap;
       const st = r > 1 ? 'over' : r >= 0.8 ? 'near' : '';
       const note = r > 1 ? `Sforato di €${eur(v - cap)}` : `Restano €${eur(cap - v)}`;
-      return `<div class="cat-row ${st}"><div class="cat-top"><span>${esc(c)}</span><span class="mono"><b>€${eur(v)}</b> <span class="muted">/ €${Number.isInteger(cap) ? cap : eur(cap)}</span></span></div><div class="cat-bar"><div style="width:${Math.min(100, Math.round(r * 100))}%"></div></div>${isCurrent || r > 1 ? `<span class="cat-note">${note}</span>` : ''}</div>`;
+      return `<button class="cat-row ${st}" data-action="openCat" data-id="${esc(c)}"><div class="cat-top"><span>${esc(c)}${I.right}</span><span class="mono"><b>€${eur(v)}</b> <span class="muted">/ €${Number.isInteger(cap) ? cap : eur(cap)}</span></span></div><div class="cat-bar"><div style="width:${Math.min(100, Math.round(r * 100))}%"></div></div>${isCurrent || r > 1 ? `<span class="cat-note">${note}</span>` : ''}</button>`;
     }).join('') : '<p class="empty">Ancora nessuna spesa in questo mese.</p>'}
   </div>
   <div class="card">
     <p class="card-label"><span>Movimenti</span><span>${all.length}</span></p>
-    <div class="list">${all.map((e) => {
-      const d = new Date(e.spent_at);
-      const when = e.source === 'notion' ? `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}` : `${dayLabel(ymd(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      const ed = u.exEdit;
-      if (ed && ed.id === e.id) return `<div class="exp-edit">
-        <p class="card-label"><span>Modifica movimento</span></p>
-        <div class="form-row">
-          <label for="edAmount" class="sr-only">Importo</label>
-          <input id="edAmount" class="field amount" data-model="edAmount" value="${esc(u.edAmount)}" inputmode="decimal">
-          <label for="edDesc" class="sr-only">Cosa</label>
-          <input id="edDesc" class="field grow" data-model="edDesc" value="${esc(u.edDesc)}">
-        </div>
-        ${e.direction === 'in' ? '' : `<div class="chips">${[...new Set([...CATEGORIES, e.category])].map((c) => `<button class="chip ${ed.cat === c ? 'on' : ''}" data-action="edCat" data-id="${esc(c)}">${esc(c)}</button>`).join('')}</div>`}
-        <div class="row-btns"><button class="btn grow" data-action="edCancel">Annulla</button><button class="btn dark grow2" data-action="edSave">Salva</button></div>
-      </div>`;
-      return `<div class="li" data-exp="${e.id}">${icon(e)}
-        <div class="li-main"><span class="li-title">${esc(e.description)}</span><span class="li-meta">${esc(e.direction === 'in' ? 'Entrata' : e.category)} · ${methLabel[e.method] || e.method} · ${when}</span></div>
-        <span class="mono ${e.direction === 'in' ? 'pos' : ''}">${e.direction === 'in' ? '+' : '−'}${eur(e.amount)}</span>
-        <button class="x-btn" data-action="delExpense" data-id="${e.id}" aria-label="Elimina ${esc(e.description)}">${I.x}</button>
-      </div>`;
-    }).join('') || '<p class="empty">Nessun movimento.</p>'}</div>
+    <div class="list">${all.map(expRowHtml).join('') || '<p class="empty">Nessun movimento.</p>'}</div>
   </div>
   <div class="notion-row">${notionLine}
     <button class="btn" data-action="notionSync" ${ns.state === 'running' ? 'disabled' : ''}>${ns.state === 'off' ? 'Riprova' : 'Sincronizza con Notion'}</button></div>`;
@@ -1856,6 +1925,7 @@ const actions = {
   go(id) {
     // Settimana: il selettore torna sempre su oggi. Sezione già aperta: torna in cima.
     if (id === 'settimana') { S.ui.weekOffset = 0; S.ui.weekSel = todayYmd(); }
+    S.ui.spCat = null; S.ui.spCatAll = false;
     if (id === S.view) { render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     if (id === 'spese' && Date.now() - S.notion.lastSync > 10 * 60 * 1000) setTimeout(() => notionSync(false), 300);
     if (id === 'mente' && Date.now() - S.brain.lastSync > 10 * 60 * 1000) setTimeout(() => brainSync(false), 300);
@@ -2145,6 +2215,9 @@ const actions = {
     if (error) { c.status = 'inbox'; render(); fail(error); } else { toast('Spostato in Mente'); thoughtSync(); }
   },
   spMonth(id) { S.ui.spMonth = Math.min(0, S.ui.spMonth + Number(id)); render(); },
+  openCat(id) { Object.assign(S.ui, { spCat: id, spCatAll: false, exEdit: null, adding: false }); render(); window.scrollTo({ top: 0 }); },
+  closeCat() { Object.assign(S.ui, { spCat: null, exEdit: null }); render(); window.scrollTo({ top: 0 }); },
+  catRange(id) { S.ui.spCatAll = id === '1'; S.ui.exEdit = null; render(); },
   addExpense() {
     // Al ritorno nell'app la spesa compare da sola (ricarica su visibilitychange).
     if (IS_IOS && !S.ui.adding) { location.href = SHORTCUT_URL; return; }

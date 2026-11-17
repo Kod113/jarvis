@@ -43,6 +43,12 @@ with sync_playwright() as p:
             if v=='settimana':
                 pg.click('[data-action="planCapture"] >> nth=0'); pg.wait_for_timeout(150)
             pg.screenshot(path=f'{out}/{name}-{v}.png', full_page=True)
+            if v=='spese':
+                pg.click('.cat-row[data-id="Shopping"]'); pg.wait_for_timeout(200)
+                pg.screenshot(path=f'{out}/{name}-spese-cat.png', full_page=True)
+                pg.click('[data-action="catRange"][data-id="1"]'); pg.wait_for_timeout(300)
+                pg.screenshot(path=f'{out}/{name}-spese-cat-all.png', full_page=True)
+                pg.click('[data-action="closeCat"]'); pg.wait_for_timeout(150)
             if v=='mente':
                 pg.click('[data-action="editCap"] >> nth=0'); pg.wait_for_timeout(100)
                 pg.keyboard.press('End'); pg.keyboard.type(' (rivisto)'); pg.keyboard.press('Enter'); pg.wait_for_timeout(200)
