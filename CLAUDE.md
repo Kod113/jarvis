@@ -45,6 +45,8 @@ tranne prima di cancellare dati dal database (avvisa sempre prima).
   Movimenti: icona della categoria (`CAT_PATHS` in app.js), riquadro blu = Apple Pay, verde = entrata.
   Tieni premuto un movimento (tasto destro sul computer) = modifica categoria, importo, descrizione (`openExpEdit` → `edSave`), poi
   `notion-sync` azione `update { id }` riscrive la riga su Notion (se non è ancora su Notion la invia).
+  Tocca una categoria in "Per categoria" (o "Entrate" nel riquadro) = pagina della categoria (`S.ui.spCat`, `viewSpeseCat`): mese scelto o
+  "Tutti i mesi" (`spCatAll`, storico caricato con `ensureCatLoaded`, raggruppato per mese con media); righe condivise `expRowHtml`.
   Entrate: categoria "Entrate" (o `direction: "in"`). Ogni risposta di `expense-ingest` ha `message`, mostrato nella notifica del comando.
 - Second brain (Mente): database Notion "Second brain / Note" (pagina `40c9756b457b81c0a091f88739fbafa1`, database `d18d183791664b8293adc6406e0ac28a`;
   proprietà Nome, Area (select), Fonte, Modificata, Ha immagini, Archiviata). Contiene le 152 note importate da Google Keep e 13 dal vault Obsidian (Fonte "Obsidian": Scienze cognitive + Java;
